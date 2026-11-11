@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">비멍</string>
+    <string name="channel_playback">재생 중 알림</string>
+    <string name="channel_playback_desc">소리가 재생되는 동안 표시되는 알림입니다.</string>
+    <string name="action_play">재생</string>
+    <string name="action_pause">일시정지</string>
+    <string name="action_stop">끄기</string>
+    <string name="status_playing">재생 중</string>
+    <string name="status_paused">일시정지됨</string>
+</resources>
