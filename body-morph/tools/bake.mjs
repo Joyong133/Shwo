@@ -8,6 +8,8 @@
 // Output (web/mesh-data.js): one fixed-topology mesh for the male figure plus per-vertex deltas for
 // "skeleton only", "fat only", "muscle only" and a small residual that makes all three together land
 // exactly on the female figure. The app blends those on the CPU, so any mix of factors is a real shape.
+// Three further sparse deltas reach past the female average (bust up to an H cup, a narrower waist,
+// fuller hips) for the app's "individual variation" sliders.
 //
 //   node tools/bake.mjs            (GRID=0.008 for a quick low-res bake)
 
@@ -95,7 +97,24 @@ const T = {
   footW:      [0.047, 0.043, 'S'],
 };
 
-function resolve(ws, wf, wm) {
+// Individual variation beyond the female average, each 0…1. The bust radius is calibrated further down
+// so that 1 measures as an H cup (bust − underbust = 27.5 cm).
+const BUST = { R: 0.095, embed: 0.10, drop: 0.030, depth: 1.14 };
+function vary(P, ext) {
+  const n = ext.waist || 0, h = ext.hip || 0;
+  // narrower waist: waist station most, its neighbours a little
+  P.torsoRx[3] -= 0.023 * n; P.torsoRz[3] -= 0.015 * n;
+  P.torsoRx[4] -= 0.003 * n; P.torsoRz[4] -= 0.002 * n;
+  P.torsoRx[2] -= 0.005 * n; P.torsoRz[2] -= 0.003 * n;
+  // fuller hips: pelvis width, soft tissue over the hip, buttocks, upper thigh
+  P.torsoRx[0] += 0.007 * h; P.torsoRx[1] += 0.022 * h; P.torsoRz[1] += 0.006 * h; P.torsoRx[2] += 0.011 * h;
+  P.hipPadR += 0.022 * h; P.gluteR += 0.019 * h; P.gluteZ -= 0.011 * h;
+  P.legRx[1] += 0.007 * h; P.legRx[2] += 0.015 * h; P.legRz[2] += 0.015 * h; P.legRx[3] += 0.009 * h; P.legRz[3] += 0.009 * h;
+  P.bust = ext.bust || 0; P.noBreast = !!ext.noBreast;
+  return P;
+}
+
+function resolve(ws, wf, wm, ext = {}) {
   const P = {};
   const one = (m, f, fac) => {
     const fr = typeof fac === 'string' ? { [fac]: 1 } : fac, add = fr.add || {};
@@ -107,7 +126,7 @@ function resolve(ws, wf, wm) {
     const [m, f, fac] = T[k];
     P[k] = Array.isArray(m) ? m.map((v, i) => one(v, f[i], Array.isArray(fac) ? fac[i] : fac)) : one(m, f, fac);
   }
-  return P;
+  return vary(P, ext);
 }
 
 // ───────────────────────────── primitives ─────────────────────────────
@@ -252,8 +271,15 @@ function build(P) {
   // chest muscle and breast sit on the rib cage, so they follow it when only the skeleton changes
   const ribW = P.torsoRx[5], ribFront = P.torsoRz[5];
   L.push(ell('pec', [ribW * 0.436, yChest + 0.040, ribFront + P.pecOff], [P.pecR, P.pecR * 0.78, P.pecD], 0.03, { axis: [0.18, 1, 0] }));
-  L.push(ell('breast', [ribW * 0.53, yChest - 0.028, ribFront + P.breastOff], [P.breastR, P.breastR, P.breastR * 0.90], 0.045));
-  L.push(ell('glute', [0.075, yHip - 0.035, P.gluteZ], [P.gluteR, P.gluteR * 1.12, P.gluteR * 0.97], 0.03));
+  // a larger bust is deeper, sits lower and is set less far into the chest wall
+  const bu = P.bust;
+  const bR = P.noBreast ? 0.012 : P.breastR + bu * (BUST.R - 0.054);
+  const bOff = P.noBreast ? -0.090 : P.breastOff + bu * (-0.0095 - BUST.embed * BUST.R + 0.039);
+  const bC = [ribW * (0.53 + 0.02 * bu), yChest - 0.028 - BUST.drop * bu, ribFront + bOff];
+  L.push(ell('breast', bC, [bR * (1 - 0.10 * bu), bR * (1 - 0.08 * bu), bR * (0.90 + (BUST.depth - 0.90) * bu)], 0.045));
+  // the slope from the upper chest down to the breast; it stays inside the chest until the bust is large
+  L.push(cap('breastSlope', [ribW * 0.47, yChest + 0.070, ribFront - 0.052], V.add(bC, [0, bR * 0.10, bR * 0.12 * bu]), 0.020 + 0.010 * bu, bR * (0.50 + 0.24 * bu), 0.045));
+  L.push(ell('glute', [0.075, yHip - 0.035, P.gluteZ], [P.gluteR, P.gluteR * 1.12, P.gluteR * 0.97], 0.03, { mir: 0.022 }));
   L.push(ell('hipPad', [0.108, yHip - 0.085, -0.012], [P.hipPadR, P.hipPadR * 1.7, P.hipPadR * 1.15], 0.04));
 
   // neck and head
@@ -324,14 +350,20 @@ function build(P) {
 
 function makeSdf(fig) {
   const L = fig.prims, n = L.length;
+  const kind = L.map((p) => (p.name === 'breast' || p.name === 'breastSlope' ? 1 : p.name === 'arm' ? 2 : 0));
   return function sdf(x, y, z) {
     const ax = x < 0 ? -x : x;
-    let d = 1e9;
+    let d = 1e9, dn = 1e9;          // dn: the same union without the breast
     for (let i = 0; i < n; i++) {
       const p = L[i];
       const bx = ax - p.bx, by = y - p.by, bz = z - p.bz;
-      if (Math.sqrt(bx * bx + by * by + bz * bz) - p.br <= d + p.k) d = smin(d, evalPrim(p, ax, y, z), p.k);
-      if (p.mir > 0 && ax < 0.06) d = smin(d, evalPrim(p, -ax, y, z), p.mir);
+      if (Math.sqrt(bx * bx + by * by + bz * bz) - p.br <= dn + p.k) {
+        const di = evalPrim(p, ax, y, z);
+        if (kind[i] === 1) d = smin(d, di, p.k);
+        else if (kind[i] === 2) { dn = smin(dn, di, p.k); if (dn < d) d = dn; }   // arm meets a large bust with a plain crease
+        else { d = smin(d, di, p.k); dn = smin(dn, di, p.k); }
+      }
+      if (p.mir > 0 && ax < 0.06) { const dm = evalPrim(p, -ax, y, z); d = smin(d, dm, p.mir); dn = smin(dn, dm, p.mir); }
     }
     return d > -y ? d : -y;        // flat soles: cut everything below the floor
   };
@@ -531,12 +563,29 @@ function measure(fig, sdf) {
   // stature: top of the head on the axis
   let lo = fig.P.H - 0.05, hi = fig.P.H + 0.05;
   for (let s = 0; s < 30; s++) { const m = (lo + hi) / 2; if (sdf(0, m, 0) < 0) lo = m; else hi = m; }
+  const bust = bustGirth(fig);
   return {
     height: hi,
     shoulder: 2 * (fig.P.shX + 0.019),        // acromion to acromion
+    bust: bust.per, bustW: bust.width,
     waist: waist.per, waistY: waist.y, waistW: waist.width,
     hip: hip.per, hipY: hip.y, hipW: hip.width,
   };
+}
+// The tape passes under the arms, so chest girths are taken on the trunk alone.
+const ARM_PARTS = new Set(['deltoid', 'arm', 'palm', 'fingers', 'thumb']);
+const trunkSdf = (fig) => makeSdf({ ...fig, prims: fig.prims.filter((p) => !ARM_PARTS.has(p.name)) });
+// fullest girth of the chest (tape over the bust)
+function bustGirth(fig) {
+  const sdf = trunkSdf(fig);
+  let best = { per: 0 };
+  for (let y = fig.y.yChest - 0.11; y <= fig.y.yChest + 0.012; y += 0.004) { const g = girth(sdf, y); if (g.per > best.per) best = { ...g, y }; }
+  return best;
+}
+// girth of the rib cage just under the bust, taken on the same figure without breasts
+function underbust(ws, wf, wm, ext = {}) {
+  const fig = build(resolve(ws, wf, wm, { ...ext, bust: 0, noBreast: true }));
+  return girth(trunkSdf(fig), fig.y.yChest - 0.080).per;
 }
 
 // ───────────────────────────── bake ─────────────────────────────
@@ -558,13 +607,14 @@ const NV = mesh.pos.length / 3, NT = mesh.tris.length / 3;
 log(`grid ${mesh.dims.join('×')}  →  ${NV} vertices, ${NT} triangles`);
 if (NV > 65535) throw new Error('too many vertices for 16-bit indices; raise GRID');
 
-function shape(key, from) {
-  const fig = corners[key], sdf = sdfs[key];
+// Puts the mesh on a figure: every vertex is carried over from the figure it currently sits on
+// (figFrom) and then dropped exactly onto the new surface.
+function shape(key, fig, sdf, from, figFrom) {
   const pos = new Float32Array(NV * 3), nrm = new Float32Array(NV * 3), ao = new Float32Array(NV);
   let maxRes = 0;
   for (let i = 0; i < NV; i++) {
     const p0 = [from[i * 3], from[i * 3 + 1], from[i * 3 + 2]];
-    const p = project(sdf, key === 'base' ? p0 : carry(corners.base, fig, p0));
+    const p = project(sdf, figFrom ? carry(figFrom, fig, p0) : p0, figFrom ? 14 : 7);
     maxRes = Math.max(maxRes, Math.abs(sdf(p[0], p[1], p[2])));
     const n = V.norm(grad(sdf, p[0], p[1], p[2]));
     pos.set(p, i * 3); nrm.set(n, i * 3); ao[i] = ambient(sdf, p, n);
@@ -572,8 +622,24 @@ function shape(key, from) {
   log(`shape ${key}: max residual ${(maxRes * 1000).toFixed(3)} mm`);
   return { pos, nrm, ao };
 }
-const base = shape('base', mesh.pos);
-const shapes = { S: shape('S', base.pos), F: shape('F', base.pos), M: shape('M', base.pos), full: shape('full', base.pos) };
+const base = shape('base', corners.base, sdfs.base, mesh.pos, null);
+const shapes = {};
+for (const k of ['S', 'F', 'M', 'full']) shapes[k] = shape(k, corners[k], sdfs[k], base.pos, corners.base);
+
+// individual variation, built on the female figure
+{
+  const under = underbust(1, 1, 1);
+  const cupOf = () => bustGirth(build(resolve(1, 1, 1, { bust: 1 }))).per - under;
+  let lo = 0.06, hi = 0.14;
+  for (let i = 0; i < 20; i++) { BUST.R = (lo + hi) / 2; if (cupOf() < 0.275) lo = BUST.R; else hi = BUST.R; }
+  log(`bust radius for an H cup: ${(BUST.R * 1000).toFixed(1)} mm`);
+}
+const VARIANTS = { BU: { bust: 1 }, WN: { waist: 1 }, HP: { hip: 1 } };
+const vfig = {}, vsdf = {};
+for (const k in VARIANTS) {
+  vfig[k] = build(resolve(1, 1, 1, VARIANTS[k])); vsdf[k] = makeSdf(vfig[k]);
+  shapes[k] = shape(k, vfig[k], vsdf[k], shapes.full.pos, corners.full);
+}
 
 // orientation: make triangles counter-clockwise seen from outside
 {
@@ -602,10 +668,21 @@ for (const [k, s] of Object.entries(shapes)) {
 }
 
 const metrics = Object.fromEntries(Object.keys(corners).map((k) => [k, measure(corners[k], sdfs[k])]));
-for (const k of ['base', 'full']) {
+const W3 = { base: [0, 0, 0], S: [1, 0, 0], F: [0, 1, 0], M: [0, 0, 1], full: [1, 1, 1] };
+for (const k in W3) metrics[k].under = underbust(...W3[k]);
+for (const k in VARIANTS) { metrics[k] = measure(vfig[k], vsdf[k]); metrics[k].under = underbust(1, 1, 1, VARIANTS[k]); }
+// the waist and hip tapes pass below the bust, so a larger bust leaves them as they were
+for (const key of ['waist', 'waistW', 'waistY', 'hip', 'hipW', 'hipY']) metrics.BU[key] = metrics.full[key];
+for (const k of ['base', 'full', 'BU', 'WN', 'HP']) {
   const m = metrics[k];
-  log(`${k}: height ${(m.height * 100).toFixed(1)}  shoulder ${(m.shoulder * 100).toFixed(1)}  waist ${(m.waist * 100).toFixed(1)}  hip ${(m.hip * 100).toFixed(1)}  WHR ${(m.waist / m.hip).toFixed(3)}  hipW ${(m.hipW * 100).toFixed(1)}`);
+  log(`${k}: height ${(m.height * 100).toFixed(1)}  shoulder ${(m.shoulder * 100).toFixed(1)}  bust ${(m.bust * 100).toFixed(1)} (w ${(m.bustW * 100).toFixed(1)}, under ${(m.under * 100).toFixed(1)})  waist ${(m.waist * 100).toFixed(1)}  hip ${(m.hip * 100).toFixed(1)}  WHR ${(m.waist / m.hip).toFixed(3)}  hipW ${(m.hipW * 100).toFixed(1)}`);
 }
+// bust − underbust along the bust slider, so the app can name the cup size
+const cupTable = [];
+for (let i = 0; i <= 16; i++) {
+  cupTable.push(bustGirth(build(resolve(1, 1, 1, { bust: i / 16 }))).per - metrics.full.under);
+}
+log('cup difference (cm) along the slider: ' + cupTable.map((v) => (v * 100).toFixed(1)).join(' '));
 
 // vertex bands the app uses to draw live width guides
 function band(yc, xmax) {
@@ -651,14 +728,37 @@ const targets = names.map((k) => {
 });
 log('max vertex travel (mm): ' + targets.map((t) => `${t.key} ${(t.posScale * 1000).toFixed(1)}`).join('  '));
 
+// individual-variation targets touch only part of the body, so they are stored sparsely (relative to the female figure)
+const extras = Object.keys(VARIANTS).map((k) => {
+  const sh = shapes[k], fu = shapes.full, idx = [];
+  for (let i = 0; i < NV; i++) {
+    let dp = 0, dn = 0;
+    for (let c = 0; c < 3; c++) { dp = Math.max(dp, Math.abs(sh.pos[i * 3 + c] - fu.pos[i * 3 + c])); dn = Math.max(dn, Math.abs(sh.nrm[i * 3 + c] - fu.nrm[i * 3 + c])); }
+    if (dp > 4e-5 || dn > 0.012 || Math.abs(sh.ao[i] - fu.ao[i]) > 0.01) idx.push(i);
+  }
+  const n = idx.length, p = new Float32Array(n * 3), nr = new Float32Array(n * 3), a = new Float32Array(n);
+  idx.forEach((v, j) => {
+    for (let c = 0; c < 3; c++) { p[j * 3 + c] = sh.pos[v * 3 + c] - fu.pos[v * 3 + c]; nr[j * 3 + c] = sh.nrm[v * 3 + c] - fu.nrm[v * 3 + c]; }
+    a[j] = sh.ao[v] - fu.ao[v];
+  });
+  let mx = 1e-9, mn = 1e-9;
+  for (const v of p) mx = Math.max(mx, Math.abs(v));
+  for (const v of nr) mn = Math.max(mn, Math.abs(v));
+  const qp = new Int16Array(n * 3); for (let i = 0; i < n * 3; i++) qp[i] = Math.round(p[i] / mx * 32767);
+  let far = 0; for (let j = 1; j < n; j++) if (Math.hypot(p[j * 3], p[j * 3 + 1], p[j * 3 + 2]) > Math.hypot(p[far * 3], p[far * 3 + 1], p[far * 3 + 2])) far = j;
+  const fv = idx[far];
+  log(`extra ${k}: ${n} vertices (${(n / NV * 100).toFixed(0)}%), max travel ${(mx * 1000).toFixed(1)} mm at (${[0, 1, 2].map((c) => fu.pos[fv * 3 + c].toFixed(3)).join(', ')})`);
+  return { key: k, n, idx: b64(new Uint16Array(idx)), posScale: mx, pos: b64(qp), nrmScale: mn, nrm: b64(q8(nr, 127 / mn)), ao: b64(q8(a, 127)) };
+});
+
 const round = (o) => JSON.parse(JSON.stringify(o, (k, v) => (typeof v === 'number' ? +v.toFixed(5) : v)));
 const data = {
   nv: NV, nt: NT, grid: GRID,
   bbMin, bbMax,
   pos: b64(qPos), nrm: b64(q8(base.nrm, 127)), ao: b64(qu8(base.ao)),
   idx: b64(new Uint16Array(mesh.tris)),
-  targets,
-  metrics: round(metrics),
+  targets, extras,
+  metrics: round(metrics), cupTable: round(cupTable),
   lm: round({ male: corners.base.lm, female: corners.full.lm }),
   bands, topVert,
 };

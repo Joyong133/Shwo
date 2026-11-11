@@ -87,7 +87,7 @@ input[type=range]::-moz-range-thumb{width:24px;height:24px;border-radius:50%;bac
 .factor input[type=range]::-webkit-slider-thumb{width:20px;height:20px;margin-top:-8px}
 
 .tabs{display:flex;gap:4px;margin-top:10px;padding:3px;border-radius:11px;background:var(--bg)}
-.tabs button{flex:1;min-height:34px;border-radius:8px;font-size:13.5px;font-weight:600;color:var(--muted)}
+.tabs button{flex:1;min-width:0;min-height:34px;border-radius:8px;font-size:13.5px;font-weight:600;color:var(--muted)}
 .tabs button[aria-selected="true"]{background:var(--surface-2);color:var(--fg);box-shadow:0 1px 2px rgba(0,0,0,.4)}
 
 .panes{height:204px;margin-top:10px;position:relative}
@@ -113,6 +113,11 @@ dl{margin:0}
 .factor label{display:flex;align-items:baseline;gap:8px;font-size:13.5px}
 .factor label span{flex:1;min-width:0;font-size:11.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .factor output{font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums}
+.vary output{color:var(--fg);font-weight:650}
+.vary input[type=range]::-webkit-slider-runnable-track{background:linear-gradient(90deg,#3b4653,#cfd6de)}
+.vary input[type=range]::-moz-range-track{background:linear-gradient(90deg,#3b4653,#cfd6de)}
+.link{font-size:11px;font-weight:650;color:var(--hi);text-decoration:underline;margin-right:4px}
+.link:disabled{color:var(--dim);text-decoration:none}
 
 .topics{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;margin:0 -16px;padding:0 16px 8px}
 .topics::-webkit-scrollbar{display:none}

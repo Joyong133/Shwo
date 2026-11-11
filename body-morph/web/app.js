@@ -38,11 +38,23 @@
     }
     return out;
   });
+  // sparse targets for individual variation (relative to the female figure)
+  var extras = {};
+  D.extras.forEach(function (t) {
+    var p = new Int16Array(dec(t.pos).buffer), n = new Int8Array(dec(t.nrm).buffer), a = new Int8Array(dec(t.ao).buffer);
+    var out = new Float32Array(t.n * STRIDE), ps = t.posScale / 32767, ns = t.nrmScale / 127;
+    for (var i = 0; i < t.n; i++) {
+      for (var c = 0; c < 3; c++) { out[i * STRIDE + c] = p[i * 3 + c] * ps; out[i * STRIDE + 3 + c] = n[i * 3 + c] * ns; }
+      out[i * STRIDE + 6] = a[i] / 127;
+    }
+    extras[t.key] = { n: t.n, idx: new Uint16Array(dec(t.idx).buffer), d: out };
+  });
   var basePos = new Float32Array(NV * 3);
   for (var i = 0; i < NV; i++) { basePos[i * 3] = base[i * STRIDE]; basePos[i * 3 + 1] = base[i * STRIDE + 1]; basePos[i * 3 + 2] = base[i * STRIDE + 2]; }
 
   // ───────────── state ─────────────
   var w = { S: 0, F: 0, M: 0 };                    // 0 = male average, 1 = female average
+  var ext = { B: 0, W: 0, H: 0 };                  // individual variation past the female average: bust, waist, hips
   var view = { yaw: -0.42, pitch: 0.10, zoom: 1, panY: 0 };
   var HOME = { yaw: -0.42, pitch: 0.10, zoom: 1, panY: 0 };
   var ui = { guides: true, spin: false, playing: false, dir: 1, hold: 0, topic: null };
@@ -50,9 +62,20 @@
 
   var mean = function () { return (w.S + w.F + w.M) / 3; };
   var lerp = function (a, b, t) { return a + (b - a) * t; };
+  // Variation rides on the fat-distribution factor: none on the male side, full on the female side.
+  function extraWeights() { return { BU: ext.B * w.F, WN: ext.W * w.F, HP: ext.H * w.F }; }
+  function cupAt(f) {                              // bust minus underbust (m) at bust-slider position f
+    var t = D.cupTable, x = Math.max(0, Math.min(1, f)) * (t.length - 1), i = Math.min(Math.floor(x), t.length - 2);
+    return t[i] + (t[i + 1] - t[i]) * (x - i);
+  }
+  var CUPS = ['AA', 'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I'];
+  function cupName(diff) { return CUPS[Math.max(0, Math.min(CUPS.length - 1, Math.round((diff * 100 - 7.5) / 2.5)))]; }
   function mixMetric(key) {
-    var m = D.metrics, b = m.base[key], dS = m.S[key] - b, dF = m.F[key] - b, dM = m.M[key] - b;
-    return b + w.S * dS + w.F * dF + w.M * dM + w.S * w.F * w.M * (m.full[key] - b - dS - dF - dM);
+    var m = D.metrics, b = m.base[key], dS = m.S[key] - b, dF = m.F[key] - b, dM = m.M[key] - b, e = extraWeights();
+    var v = b + w.S * dS + w.F * dF + w.M * dM + w.S * w.F * w.M * (m.full[key] - b - dS - dF - dM);
+    v += e.WN * (m.WN[key] - m.full[key]) + e.HP * (m.HP[key] - m.full[key]);
+    if (key === 'bust') v += cupAt(e.BU) - D.cupTable[0];
+    return v;
   }
 
   // ───────────── WebGL ─────────────
@@ -236,6 +259,17 @@
     var wS = w.S, wF = w.F, wM = w.M, wR = wS * wF * wM;
     var dS = deltas[0], dF = deltas[1], dM = deltas[2], dR = deltas[3];
     for (var i = 0, n = NV * STRIDE; i < n; i++) cur[i] = base[i] + wS * dS[i] + wF * dF[i] + wM * dM[i] + wR * dR[i];
+    var e = extraWeights();
+    for (var k in e) {
+      var we = e[k], x = extras[k];
+      if (we < 1e-4) continue;
+      for (var j = 0; j < x.n; j++) {
+        var o = x.idx[j] * STRIDE, q = j * STRIDE;
+        cur[o] += we * x.d[q]; cur[o + 1] += we * x.d[q + 1]; cur[o + 2] += we * x.d[q + 2];
+        cur[o + 3] += we * x.d[q + 3]; cur[o + 4] += we * x.d[q + 4]; cur[o + 5] += we * x.d[q + 5];
+        cur[o + 6] += we * x.d[q + 6];
+      }
+    }
     gl.bindBuffer(gl.ARRAY_BUFFER, vbo); gl.bufferSubData(gl.ARRAY_BUFFER, 0, cur);
   }
 
@@ -365,9 +399,9 @@
     ['shoulder', '어깨너비', 'cm', 1, function () { return mixMetric('shoulder') * 100; }, function (m) { return m.shoulder * 100; }],
     ['waist', '허리둘레', 'cm', 1, function () { return mixMetric('waist') * 100; }, function (m) { return m.waist * 100; }],
     ['hip', '엉덩이둘레', 'cm', 1, function () { return mixMetric('hip') * 100; }, function (m) { return m.hip * 100; }],
-    ['whr', '허리 ÷ 엉덩이', '', 2, function () { return mixMetric('waist') / mixMetric('hip'); }, function (m) { return m.waist / m.hip; }],
-    ['shr', '어깨 ÷ 엉덩이 너비', '', 2, function () { return mixMetric('shoulder') / mixMetric('hipW'); }, function (m) { return m.shoulder / m.hipW; }]
+    ['whr', '허리 ÷ 엉덩이', '', 2, function () { return mixMetric('waist') / mixMetric('hip'); }, function (m) { return m.waist / m.hip; }]
   ];
+  METRICS.splice(2, 0, ['bust', '가슴둘레', 'cm', 1, function () { return mixMetric('bust') * 100; }, function (m) { return m.bust * 100; }]);
   var metricEls = [];
   function buildUI() {
     var box = $('metrics'), dl = document.createElement('dl');
@@ -402,7 +436,14 @@
       e.dot.style.left = Math.max(0, Math.min(1, t)) * 100 + '%';
     });
     var st = $('state').lastElementChild, same = Math.abs(w.S - w.F) < 0.002 && Math.abs(w.S - w.M) < 0.002;
-    st.textContent = !same ? '요인별 조합' : m < 0.002 ? '남성 평균' : m > 0.998 ? '여성 평균' : '중간 ' + Math.round(m * 100) + '%';
+    var varied = (ext.B > 0.005 || ext.W > 0.005 || ext.H > 0.005) && w.F > 0.002;
+    st.textContent = !same ? '요인별 조합' : m < 0.002 ? '남성 평균' : m > 0.998 ? (varied ? '여성 · 개인차' : '여성 평균') : '중간 ' + Math.round(m * 100) + '%';
+    $('xB').value = Math.round(ext.B * 1000); $('xW').value = Math.round(ext.W * 1000); $('xH').value = Math.round(ext.H * 1000);
+    var fm = D.metrics.full;
+    $('oB').textContent = cupName(cupAt(ext.B)) + '컵';
+    $('oW').textContent = ((fm.waist + ext.W * (D.metrics.WN.waist - fm.waist)) * 100).toFixed(0) + ' cm';
+    $('oH').textContent = ((fm.hip + ext.H * (D.metrics.HP.hip - fm.hip)) * 100).toFixed(0) + ' cm';
+    $('xReset').disabled = !(ext.B > 0 || ext.W > 0 || ext.H > 0);
     $('master').value = Math.round(m * 1000);
     [['S', 'fS', 'oS'], ['F', 'fF', 'oF'], ['M', 'fM', 'oM']].forEach(function (k) {
       $(k[1]).value = Math.round(w[k[0]] * 1000); $(k[2]).textContent = Math.round(w[k[0]] * 100) + '%';
@@ -421,12 +462,21 @@
     [['S', 'fS'], ['F', 'fF'], ['M', 'fM']].forEach(function (k) {
       $(k[1]).addEventListener('input', function (e) { setPlaying(false); w[k[0]] = e.target.value / 1000; dirtyShape = true; kick(); });
     });
+    [['B', 'xB'], ['W', 'xW'], ['H', 'xH']].forEach(function (k) {
+      $(k[1]).addEventListener('input', function (e) {
+        setPlaying(false);
+        ext[k[0]] = e.target.value / 1000;
+        if (w.F < 0.25) w.S = w.F = w.M = 1;        // variation only shows on the female side, so go there
+        dirtyShape = true; kick();
+      });
+    });
+    $('xReset').addEventListener('click', function () { ext.B = ext.W = ext.H = 0; dirtyShape = true; kick(); });
     $('btnPlay').addEventListener('click', function () { setPlaying(!ui.playing); });
     $('btnGuides').addEventListener('click', function (e) { ui.guides = !ui.guides; e.currentTarget.setAttribute('aria-pressed', String(ui.guides)); dirtyView = true; kick(); });
     $('btnSpin').addEventListener('click', function (e) { ui.spin = !ui.spin; e.currentTarget.setAttribute('aria-pressed', String(ui.spin)); kick(); });
     $('btnFront').addEventListener('click', function () { ui.spin = false; $('btnSpin').setAttribute('aria-pressed', 'false'); view.yaw = 0; view.pitch = 0.04; view.zoom = 1; view.panY = 0; dirtyView = true; kick(); });
 
-    var tabs = ['metrics', 'factors', 'learn'];
+    var tabs = ['metrics', 'factors', 'vary', 'learn'];
     tabs.forEach(function (t) {
       $('tab-' + t).addEventListener('click', function () {
         tabs.forEach(function (o) { $('tab-' + o).setAttribute('aria-selected', String(o === t)); $('pane-' + o).hidden = o !== t; });
@@ -531,11 +581,12 @@
     set: function (o) {
       if (o.t != null) { w.S = w.F = w.M = o.t; }
       ['S', 'F', 'M'].forEach(function (k) { if (o[k] != null) w[k] = o[k]; });
+      ['B', 'W', 'H'].forEach(function (k) { if (o[k] != null) ext[k] = o[k]; });
       ['yaw', 'pitch', 'zoom', 'panY'].forEach(function (k) { if (o[k] != null) view[k] = o[k]; });
       if (o.guides != null) ui.guides = o.guides;
       dirtyShape = dirtyView = true; kick();
     },
     topic: setTopic,
-    get: function () { return { w: { S: w.S, F: w.F, M: w.M }, view: { yaw: view.yaw, pitch: view.pitch, zoom: view.zoom }, playing: ui.playing, guides: ui.guides, spin: ui.spin, topic: ui.topic }; }
+    get: function () { return { w: { S: w.S, F: w.F, M: w.M }, ext: { B: ext.B, W: ext.W, H: ext.H }, view: { yaw: view.yaw, pitch: view.pitch, zoom: view.zoom }, playing: ui.playing, guides: ui.guides, spin: ui.spin, topic: ui.topic }; }
   };
 })();

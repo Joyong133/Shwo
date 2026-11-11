@@ -48,6 +48,7 @@
     <div class="tabs" role="tablist">
       <button role="tab" aria-selected="true" aria-controls="pane-metrics" id="tab-metrics">치수</button>
       <button role="tab" aria-selected="false" aria-controls="pane-factors" id="tab-factors">요인별</button>
+      <button role="tab" aria-selected="false" aria-controls="pane-vary" id="tab-vary">개인차</button>
       <button role="tab" aria-selected="false" aria-controls="pane-learn" id="tab-learn">설명</button>
     </div>
 
@@ -73,6 +74,22 @@
         <p class="note">성장이 끝난 뒤에는 성호르몬이 달라져도 <b>골격은 거의 변하지 않고</b>, 지방 분포와 근육량은 서서히 달라질 수 있습니다.</p>
       </div>
 
+      <div class="pane" id="pane-vary" role="tabpanel" aria-labelledby="tab-vary" hidden>
+        <div class="factor vary">
+          <label for="xB"><b>가슴</b><span>평균(A컵) → H컵</span><output id="oB">A컵</output></label>
+          <input type="range" id="xB" min="0" max="1000" value="0">
+        </div>
+        <div class="factor vary">
+          <label for="xW"><b>허리</b><span>평균 → 가늘게</span><output id="oW"></output></label>
+          <input type="range" id="xW" min="0" max="1000" value="0">
+        </div>
+        <div class="factor vary">
+          <label for="xH"><b>엉덩이</b><span>평균 → 크게</span><output id="oH"></output></label>
+          <input type="range" id="xH" min="0" max="1000" value="0">
+        </div>
+        <p class="note"><button class="link" id="xReset" disabled>평균으로 되돌리기</button> 여성 평균에 더하는 <b>개인차</b>입니다. 평균이 아니며, 남성 평균 쪽(왼쪽)에서는 적용되지 않습니다.</p>
+      </div>
+
       <div class="pane" id="pane-learn" role="tabpanel" aria-labelledby="tab-learn" hidden>
         <div class="topics" id="topics"></div>
         <article class="card" id="card"></article>
@@ -89,6 +106,7 @@
       <li>이 차이는 대부분 <b>사춘기</b>에 성호르몬(테스토스테론, 에스트로겐)의 영향으로 몇 해에 걸쳐 만들어집니다. 화면의 변화는 그 차이를 비교하기 쉽게 이어 붙인 것이지, 실제 몸이 변하는 과정이나 속도를 나타내지 않습니다.</li>
       <li>남녀 각각의 분포는 넓게 퍼져 있고 서로 많이 겹칩니다. 평균과 다른 체형도 모두 정상입니다.</li>
       <li>수치는 이해를 돕기 위한 <b>근사값·예시값</b>입니다. 연령, 인구 집단, 측정 방법에 따라 달라지므로 진단이나 평가에 쓰지 마세요.</li>
+      <li><b>개인차</b> 탭의 가슴·허리·엉덩이 값은 평균이 아니라, 사람마다 다른 범위의 일부를 보여 주는 것입니다. 컵 크기는 가슴둘레에서 밑가슴둘레를 뺀 값(A컵 10 cm부터 2.5 cm 간격)으로 정했습니다.</li>
       <li>모형은 생식기 등 세부 구조를 생략한 마네킹입니다.</li>
     </ul>
     <button class="primary" id="aboutClose">확인</button>
