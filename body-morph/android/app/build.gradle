@@ -1,0 +1,53 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'app.shwo.bodymorph'
+    compileSdk 35
+
+    defaultConfig {
+        applicationId 'app.shwo.bodymorph'
+        minSdk 26
+        targetSdk 35
+        versionCode 1
+        versionName '1.0'
+    }
+
+    // A throwaway, publicly known key (same credentials as Android's debug key), kept in the repo so that
+    // every rebuild can be installed over the previous one. Replace it before publishing to a store.
+    signingConfigs {
+        shared {
+            storeFile file('../debug.keystore')
+            storePassword 'android'
+            keyAlias 'androiddebugkey'
+            keyPassword 'android'
+        }
+    }
+
+    buildTypes {
+        debug {
+            signingConfig signingConfigs.shared
+        }
+        release {
+            minifyEnabled false
+            signingConfig signingConfigs.shared
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    // The app's screen is the web page in ../web, bundled as-is.
+    sourceSets {
+        main {
+            assets.srcDirs = ['../../web']
+        }
+    }
+
+    lint {
+        checkReleaseBuilds false
+    }
+}

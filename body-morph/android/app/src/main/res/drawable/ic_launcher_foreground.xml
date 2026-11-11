@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- One figure, two halves: straight-sided on the left (teal), curved on the right (amber). -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:fillColor="#5FD0C5"
+        android:pathData="M54,27 A8.5,8.5 0 0 0 54,44 Z" />
+    <path
+        android:fillColor="#F2A65E"
+        android:pathData="M54,27 A8.5,8.5 0 0 1 54,44 Z" />
+    <path
+        android:fillColor="#5FD0C5"
+        android:pathData="M54,48 L40,48 Q33.5,48 33.5,54.5 L37.5,81 L54,81 Z" />
+    <path
+        android:fillColor="#F2A65E"
+        android:pathData="M54,48 L65,48 Q71,48 71,54 Q70.5,60 66,65 Q72.5,72 72.5,81 L54,81 Z" />
+</vector>
