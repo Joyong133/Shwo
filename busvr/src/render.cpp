@@ -86,7 +86,7 @@ void main(){
   vec3 flatc = (uTint[0] * vW.r + uTint[1] * vW.g + uTint[2] * vW.b + uTint[3] * vW.a) / sum;
 #ifdef NEAR
   vec3 g = texture(uTex, vec3(vWorld / 12.0, 0.0)).rgb;
-  vec3 f = texture(uTex, vec3(vWorld / 28.0, 1.0)).rgb;
+  vec3 f = mix(texture(uTex, vec3(vWorld / 28.0, 1.0)).rgb, g * 0.78, 1.0 - smoothstep(40.0, 170.0, vDS.x));
   vec3 c = texture(uTex, vec3(vWorld / 200.0, 2.0)).rgb * (0.7 + 0.6 * g.g);
   vec3 u = texture(uTex, vec3(vWorld / 24.0, 3.0)).rgb;
   vec3 det = (uTint[0] * g * vW.r + uTint[1] * f * vW.g + uTint[2] * c * vW.b + uTint[3] * u * vW.a) * (2.0 / sum);
@@ -194,7 +194,8 @@ void main(){
     vCol = toLin(aCol.rgb) * uSunDir.w * 1.3 * exp(-dist * uFogColor.a * 0.5);
     vFog = vec4(0.0);
   } else {
-    vec3 tint = mix(uTintEver, mix(uTintGinkgo, uTintDecid, clamp(aCol.a * 2.0 - 1.0, 0.0, 1.0)), step(0.25, aCol.a));
+    vec3 dec = mix(uTintDecid, uTintGinkgo, aCol.g * 0.75);
+    vec3 tint = mix(uTintEver, mix(uTintGinkgo, dec, clamp(aCol.a * 2.0 - 1.0, 0.0, 1.0)), step(0.25, aCol.a));
     float sunSide = dot(normalize(-toC.xz + vec2(0.0001)), normalize(uSunDir.xz + vec2(0.0001)));
     vec3 light = uSunColor.rgb * (0.50 + 0.22 * sunSide) * clamp(uSunDir.y * 3.0 + 0.3, 0.0, 1.0) + uSkyAmb.rgb * 0.9;
     vCol = tint * aCol.r * light;

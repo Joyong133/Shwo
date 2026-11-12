@@ -101,7 +101,10 @@ void App::updateTraffic(double dt) {
         int ci = R.idx(c.s);
         if (R.kind[ci] != kind || R.lanes[ci] < c.lane) continue;
         c.lat = laneLat(R, c.s, c.lane, c.dir);
-        if (c.dir > 0 && fabsf(c.lat - busOff) < 2.9f && fabs(c.s - s) < 40) continue;
+        if (c.dir > 0 && fabsf(c.lat - busOff) < 2.9f) {            // our own lane: nobody dawdles in front of the bus
+            if (fabs(c.s - s) < 60 || c.type >= VEH_PORTER) continue;
+            c.want = std::max(c.want, speed + 1.5f + 2.5f * frand()); c.v = c.want;
+        }
         bool clear = true;
         for (const Vehicle& o : cars) if (o.dir == c.dir && o.lane == c.lane && fabs(o.s - c.s) < 34.0) { clear = false; break; }
         if (!clear) continue;
@@ -109,9 +112,37 @@ void App::updateTraffic(double dt) {
     }
 }
 
+// convex outline of a handful of ground points (x,z), counter-clockwise seen from above
+static void hullXZ(std::vector<Vec3>& p) {
+    std::sort(p.begin(), p.end(), [](const Vec3& a, const Vec3& b) { return a.x < b.x || (a.x == b.x && a.z < b.z); });
+    auto cr = [](const Vec3& o, const Vec3& a, const Vec3& b) { return (a.x - o.x) * (b.z - o.z) - (a.z - o.z) * (b.x - o.x); };
+    std::vector<Vec3> h(p.size() * 2); int k = 0;
+    for (size_t i = 0; i < p.size(); i++) { while (k >= 2 && cr(h[k - 2], h[k - 1], p[i]) <= 0) k--; h[k++] = p[i]; }
+    for (int i = (int)p.size() - 2, t = k + 1; i >= 0; i--) { while (k >= t && cr(h[k - 2], h[k - 1], p[i]) <= 0) k--; h[k++] = p[i]; }
+    h.resize(std::max(k - 1, 0)); p = h;
+}
+
 void App::drawTraffic(const Vec3& headFwd) {
     const Route& R = world.d.route;
     BillMeshData glow;
+    // shadows: where the sun throws the outline of each vehicle onto the road
+    MeshData sh; sh.mat = MAT_UI; sh.layer = -1;
+    float sunLum = env.sunColor.x * 0.3f + env.sunColor.y * 0.5f + env.sunColor.z * 0.2f;
+    float shA = sat(sunLum * 0.55f) * (1.f - env.tunnel) * (1.f - env.night) * (1.f - sstep(0.5f, 0.95f, env.cloud));
+    Vec3 cast(0, 0, 0);
+    if (env.sunDir.y > 0.05f) { cast = Vec3(-env.sunDir.x, 0, -env.sunDir.z) * (1.f / env.sunDir.y); float l = length(cast); if (l > 4.f) cast = cast * (4.f / l); }
+    auto shadow = [&](const Vec3& c, const Vec3& fw, const Vec3& rt, float hl, float hw, float hgt) {
+        if (shA < 0.03f) return;
+        std::vector<Vec3> pts;
+        for (int a = -1; a <= 1; a += 2) for (int b = -1; b <= 1; b += 2) { Vec3 q = c + fw * (hl * a) + rt * (hw * b); pts.push_back(q); pts.push_back(q + cast * hgt); }
+        hullXZ(pts);
+        if (pts.size() < 3) return;
+        sh.color(0x000000, (int)(shA * 255));
+        uint32_t i0 = (uint32_t)sh.v.size();
+        for (auto& q : pts) sh.vert(Vec3(q.x, c.y + 0.03f, q.z), Vec3(0, 1, 0));
+        for (size_t k = 1; k + 1 < pts.size(); k++) sh.tri(i0, i0 + (uint32_t)k + 1, i0 + (uint32_t)k);
+    };
+    if (showBus) shadow(Vec3(0, 0, 0), busFwd, busRight, 6.0f, 1.25f, 3.4f);
     ren.lit.use(); glActiveTexture(GL_TEXTURE0); glBindTexture(GL_TEXTURE_2D_ARRAY, ren.texFacade); ren.lit.seti("uTex", 0); ren.lit.set1("uTexGain", 1.f);
     for (const Vehicle& c : cars) {
         int ci = R.idx(c.s);
@@ -128,6 +159,7 @@ void App::drawTraffic(const Vec3& headFwd) {
         ren.lit.set4("uTint", t.x, t.y, t.z, 1);
         ren.lit.setMat4("uModel", Mat4::basis(rt, up, -fw, rel));
         vehMesh[c.type].draw(); ren.stats.tris += vehMesh[c.type].count / 3; ren.stats.draws++;
+        if (dist < 250.f) shadow(rel, fw, rt, vehInfo[c.type].length * 0.5f, vehInfo[c.type].width * 0.5f, vehInfo[c.type].height * 0.9f);
         if (env.night > 0.02f) {
             float hl = vehInfo[c.type].length * 0.5f, hw = vehInfo[c.type].width * 0.5f - 0.22f, y = c.type >= VEH_BOXTRUCK ? 0.95f : 0.72f;
             bool front = dot(fw, rel) < 0;       // we see its headlights when it faces us
@@ -138,6 +170,7 @@ void App::drawTraffic(const Vec3& headFwd) {
         }
     }
     ren.lit.set4("uTint", 1, 1, 1, 1);
+    if (sh.i.empty()) shadowMesh.destroy(); else shadowMesh.upload(sh, true);
     if (glow.i.empty()) vehGlow.destroy();
     else vehGlow.upload(glow.v.data(), glow.v.size() * sizeof(BVtx), glow.i.data(), glow.i.size(), LAYOUT_BVTX, true);
 }

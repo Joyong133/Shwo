@@ -17,7 +17,7 @@ bool App::init() {
     return true;
 }
 void App::shutdown() { audio.stop(); world.shutdown(); }
-void App::onPause() { if (dirty && phase == PH_RIDE) writeSave(); }
+void App::onPause() { if (dirty && phase == PH_RIDE && timeSec - lastSave > 3.0) { lastSave = timeSec; writeSave(); } }
 
 Vec3 App::seatEye() const { return bus.eye(bus.choices[seat % (int)bus.choices.size()]); }
 void App::setSeat(int sel) {
@@ -107,8 +107,18 @@ void App::computeBusPose(double dt) {
     busFwd = busMat.dir(Vec3(0, 0, -1)); busRight = busMat.dir(Vec3(1, 0, 0)); busUp = busMat.dir(Vec3(0, 1, 0));
 }
 
+void App::recenter(const AppInput& in) {
+    Vec3 p = (in.eye[0].pos + in.eye[1].pos) * 0.5f;
+    Vec3 f = rotate(in.eye[0].rot, Vec3(0, 0, -1));
+    float yaw = (fabsf(f.x) + fabsf(f.z) > 0.2f) ? atan2f(-f.x, -f.z) : 0.f;
+    recenterInv = (Mat4::translate(p) * Mat4::rotY(yaw)).rigidInverse();
+    seatYaw = 0; recentered = true;
+}
+
 void App::update(const AppInput& in, bool blockingLoad) {
     timeSec += in.dt;
+    lastIn = in;
+    if (autoRecenter && !recentered && in.dt > 0) { trackedFor += in.dt; if (trackedFor > 0.6) recenter(in); }
     handleInput(in);
     if (phase == PH_RIDE) advance(in.dt);
     computeBusPose(in.dt);
@@ -135,7 +145,7 @@ void App::update(const AppInput& in, bool blockingLoad) {
 void App::render(StereoTarget& rt, GLuint colorTex, const AppInput& in) {
     FrameUBO f; memset(&f, 0, sizeof(f));
     Mat4 seatBase = Mat4::translate(seatEye());
-    Mat4 seatM = seatBase * Mat4::rotY(seatYaw);
+    Mat4 seatM = seatBase * seatFromLocal();
     Vec3 headFwd(0, 0, -1);
     for (int e = 0; e < 2; e++) {
         Mat4 eyeLocal = Mat4::fromQuat(in.eye[e].rot, in.eye[e].pos);
@@ -167,6 +177,12 @@ void App::render(StereoTarget& rt, GLuint colorTex, const AppInput& in) {
         ren.drawWorldOpaque(world, env, busPos, headFwd);
         drawTraffic(headFwd);
         ren.drawLit(sigMesh, Mat4::identity(), ren.texFacade, 1.f);
+        if (shadowMesh.valid()) {           // soft ground shadows under the bus and the traffic
+            glEnable(GL_BLEND); glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ONE_MINUS_SRC_ALPHA); glDepthMask(GL_FALSE);
+            glEnable(GL_POLYGON_OFFSET_FILL); glPolygonOffset(-2.f, -6.f);
+            ren.drawLit(shadowMesh, Mat4::identity(), ren.texFacade, 1.f);
+            glDisable(GL_POLYGON_OFFSET_FILL); glDisable(GL_BLEND); glDepthMask(GL_TRUE);
+        }
         ren.drawSky();
         ren.drawWorldAlpha(world, env, busPos, headFwd, font);
         // blended: lamp glows of the traffic, then everything attached to the bus

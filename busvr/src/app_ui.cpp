@@ -5,7 +5,7 @@ static const float kDepartOptions[] = {-1.f, 6.5f, 8.f, 11.f, 14.f, 16.5f, 19.f,
 static const float kSpeedOptions[] = {1.f, 4.f, 16.f, 60.f};
 static const char* kSpeedNames[] = {"실제 시간 (1배속)", "4배속", "16배속", "60배속 (미리보기)"};
 static const char* kSeatNames[] = {"3번 · 맨 앞 1인석 (전면 시야)", "12번 · 가운데 1인석 (오른쪽 창)", "10번 · 가운데 왼쪽 창가", "1번 · 맨 앞 왼쪽 창가", "24번 · 뒤쪽 1인석 (오른쪽 창)"};
-enum { B_DEP_L = 1, B_DEP_R, B_SEAT_L, B_SEAT_R, B_SPD_L, B_SPD_R, B_START, B_RESUME, B_CLOSE, B_END, B_HUD, B_RESTART };
+enum { B_DEP_L = 1, B_DEP_R, B_SEAT_L, B_SEAT_R, B_SPD_L, B_SPD_R, B_START, B_RESUME, B_CLOSE, B_END, B_HUD, B_RESTART, B_RECENTER };
 
 static const Vec3 kPanelC(0.f, 0.02f, -0.62f); static const float kPanelS = 0.62f;
 static const uint32_t SAVE_MAGIC = 0x31565342;
@@ -36,8 +36,9 @@ void App::click(int id) {
         case B_SEAT_R: setSeat(seat + 1); break;
         case B_SPD_L: speedSel = (speedSel + 3) % 4; if (phase == PH_RIDE) timeScale = kSpeedOptions[speedSel]; break;
         case B_SPD_R: speedSel = (speedSel + 1) % 4; if (phase == PH_RIDE) timeScale = kSpeedOptions[speedSel]; break;
-        case B_START: clearSave(); startTrip(false); break;
-        case B_RESUME: startTrip(true); break;
+        case B_START: clearSave(); recenter(lastIn); startTrip(false); break;
+        case B_RESUME: recenter(lastIn); startTrip(true); break;
+        case B_RECENTER: recenter(lastIn); break;
         case B_CLOSE: menuOpen = false; break;
         case B_HUD: hud = !hud; break;
         case B_END: writeSave(); phase = PH_MENU; s = 0; speed = 0; dwellLeft = 0; tripTime = 0; menuOpen = true; cars.clear(); break;
@@ -46,7 +47,7 @@ void App::click(int id) {
 }
 
 void App::handleInput(const AppInput& in) {
-    Mat4 yaw = Mat4::rotY(seatYaw);
+    Mat4 yaw = seatFromLocal();
     bool anyHand = false;
     for (int h = 0; h < 2; h++) {
         rayOn[h] = in.hand[h].valid;
@@ -97,7 +98,7 @@ void App::handleInput(const AppInput& in) {
             pm.color(0xffffff, 150);
             pm.quad(o - side, o + side, e + side, e - side); pm.quad(o - upv, o + upv, e + upv, e - upv);
             pm.color(0x30343a, 255);
-            pm.roundBox(Mat4::fromQuat(in.hand[h].rot, o) , Vec3(-0.018f, -0.018f, -0.01f), Vec3(0.018f, 0.018f, 0.09f), 0.012f, 1);
+            pm.roundBox(yaw * Mat4::fromQuat(in.hand[h].rot, in.hand[h].pos), Vec3(-0.018f, -0.018f, -0.01f), Vec3(0.018f, 0.018f, 0.09f), 0.012f, 1);
         }
         if (rayLen[h] < 1.19f) {
             float r = gaze ? 0.006f + 0.01f * sat(gazeT / 1.4f) : 0.006f;
@@ -130,6 +131,7 @@ void App::buildMenu() {
     };
     rect(-0.5f, -0.36f, 0.5f, 0.36f, 0x0e1622, 238);
     rect(-0.5f, 0.345f, 0.5f, 0.36f, 0xf2b84b, 255, 0.001f);
+    button(B_RECENTER, 0.30f, 0.285f, 0.47f, 0.33f, "자리 맞추기", 0.022f, 0x25344c);
     char buf[160];
     if (phase == PH_MENU) {
         text("서울 → 부산 고속버스", 0, 0.255f, 0.066f, 0xffffff);
@@ -144,7 +146,7 @@ void App::buildMenu() {
             snprintf(buf, sizeof(buf), "이어서 타기 · %dkm 지점", (int)(saved.s / 1000));
             button(B_RESUME, 0.03f, -0.275f, 0.45f, -0.185f, buf, 0.034f, 0x35507a);
         } else button(B_START, -0.22f, -0.275f, 0.22f, -0.185f, "출발", 0.046f, 0x2f6f4a);
-        text("트리거: 선택 · 스틱 좌우: 방향 전환 · B/Y: 메뉴 · A/X: 안내판", 0, -0.335f, 0.022f, 0x7f8da3);
+        text("편하게 앉은 뒤 출발을 누르세요 · 트리거: 선택 · 스틱 좌우: 방향 전환 · B/Y: 메뉴 · A/X: 안내판", 0, -0.335f, 0.020f, 0x7f8da3);
     } else if (phase == PH_RIDE) {
         text("운행 중", 0, 0.255f, 0.056f, 0xffffff);
         snprintf(buf, sizeof(buf), "%s · 시속 %dkm", R.regionAt(s), (int)lroundf(speed * 3.6f));

@@ -22,6 +22,10 @@ struct App {
     int phase = PH_MENU; double s = 0, tripTime = 0; float dwellLeft = 0; int nextStop = 0; float speed = 0, accel = 0;
     double departClock = 14.0, nowClock = 14.0; float timeScale = 1.f; int month = 11, dayOfYear = 315;
     int seat = 0; float seatYaw = 0; bool showBus = true;
+    // seat calibration: wherever the rider's head is when they sit down becomes the seat's head position
+    Mat4 recenterInv = Mat4::identity(); bool recentered = false, autoRecenter = true; AppInput lastIn; double trackedFor = 0;
+    void recenter(const AppInput& in);
+    Mat4 seatFromLocal() const { return Mat4::rotY(seatYaw) * recenterInv; }
     // ---- settings / menu
     int departSel = 0, speedSel = 0; bool menuOpen = true, hud = false;
     bool hasSave = false; SaveData saved; double saveTimer = 0; bool dirty = false;
@@ -32,9 +36,10 @@ struct App {
     std::string banner; double bannerUntil = 0; bool annDepart = false, annRest = false, annArrive = false, annRestLeave = false; int lastBridge = 0;
     // ---- bus pose (world)
     Vec3d busPos; Vec3 busFwd, busRight, busUp; Mat4 busMat; float roll = 0, pitch = 0;
-    double timeSec = 0, dispTimer = 0;
+    double timeSec = 0, dispTimer = 1e9;
     // ---- dynamic meshes
-    Mesh uiBg, uiText, dispBg, dispText, hudBg, hudText, pointerMesh, sigMesh, vehGlow;
+    Mesh uiBg, uiText, dispBg, dispText, hudBg, hudText, pointerMesh, sigMesh, vehGlow, shadowMesh;
+    double lastSave = -100;
     // ---- traffic
     Mesh vehMesh[VEH_COUNT]; VehicleInfo vehInfo[VEH_COUNT]; std::vector<Vehicle> cars; uint32_t rngState = 99;
 

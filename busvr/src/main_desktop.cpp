@@ -21,14 +21,14 @@ static Quat quatYawPitch(float yaw, float pitch) {
 }
 int main(int argc, char** argv) {
     double km = 60; float yaw = 0, pitch = 0, clock = 14, scale = 1, fov = 100; int W = 1280, H = 1280, mono = 1, month = 11, frames = 0; std::string out = "/tmp/shot.png"; int phase = PH_RIDE;
-    float ex = 0, ey = 0, ez = 0; float cloud = 0.35f; int both = 0; int seatArg = 0, busArg = 1, hudArg = 0, menuArg = 0;
+    float ex = 0, ey = 0, ez = 0; float cloud = 0.35f; int both = 0; int seatArg = 0, busArg = 1, hudArg = 0, menuArg = 0, simulate = 0;
     for (int i = 1; i + 1 < argc; i += 2) {
         std::string k = argv[i]; const char* v = argv[i + 1];
         if (k == "--km") km = atof(v); else if (k == "--yaw") yaw = atof(v); else if (k == "--pitch") pitch = atof(v); else if (k == "--clock") clock = atof(v);
         else if (k == "--out") out = v; else if (k == "--w") W = atoi(v); else if (k == "--h") H = atoi(v); else if (k == "--fov") fov = atof(v);
         else if (k == "--month") month = atoi(v); else if (k == "--assets") gAssetDir = v; else if (k == "--frames") frames = atoi(v); else if (k == "--scale") scale = atof(v);
         else if (k == "--ex") ex = atof(v); else if (k == "--ey") ey = atof(v); else if (k == "--ez") ez = atof(v); else if (k == "--cloud") cloud = atof(v);
-        else if (k == "--phase") phase = atoi(v); else if (k == "--seat") seatArg = atoi(v); else if (k == "--bus") busArg = atoi(v); else if (k == "--hud") hudArg = atoi(v); else if (k == "--menu") menuArg = atoi(v); else if (k == "--both") both = atoi(v);
+        else if (k == "--phase") phase = atoi(v); else if (k == "--seat") seatArg = atoi(v); else if (k == "--bus") busArg = atoi(v); else if (k == "--hud") hudArg = atoi(v); else if (k == "--simulate") simulate = atoi(v); else if (k == "--menu") menuArg = atoi(v); else if (k == "--both") both = atoi(v);
     }
     EGLDisplay dpy = eglGetPlatformDisplay(EGL_PLATFORM_SURFACELESS_MESA, EGL_DEFAULT_DISPLAY, nullptr);
     EGLint ma, mi; if (!eglInitialize(dpy, &ma, &mi)) { LOGE("egl init failed"); return 1; }
@@ -39,13 +39,22 @@ int main(int argc, char** argv) {
     EGLint pa[] = {EGL_WIDTH, 16, EGL_HEIGHT, 16, EGL_NONE}; EGLSurface surf = eglCreatePbufferSurface(dpy, cfg, pa);
     if (!eglMakeCurrent(dpy, surf, surf, ctx)) { LOGE("make current failed"); return 1; }
 
-    App app; app.seat = seatArg; app.showBus = busArg != 0; app.nowClock = clock;
+    App app; app.seat = seatArg; app.showBus = busArg != 0; app.nowClock = clock; app.autoRecenter = false;
     if (!app.init()) { LOGE("app init failed"); return 1; }
     app.month = month; app.dayOfYear = (month - 1) * 30 + 15; app.env.cloud = cloud; app.hud = hudArg != 0;
     if (phase == PH_RIDE) { app.startTrip(false); app.annDepart = true; app.menuOpen = menuArg != 0; }
     app.phase = phase; app.s = km * 1000.0; app.departClock = clock; app.timeScale = scale;
     const Route& R = app.world.d.route;
     app.nextStop = 0; while (app.nextStop < (int)R.stops.size() && R.stops[app.nextStop].s <= app.s) app.nextStop++;
+    if (simulate) {       // run the whole timetable without drawing: checks the trip really takes 4 h 15 min and never stalls
+        app.s = 0; app.tripTime = 0; app.nextStop = 0; app.phase = PH_RIDE; app.timeScale = 1; double lastReport = 0; float vmax = 0;
+        while (app.phase == PH_RIDE && app.tripTime < 6 * 3600) {
+            app.advance(0.2); vmax = std::max(vmax, app.speed);
+            if (app.tripTime - lastReport >= 1800) { lastReport = app.tripTime; LOGI("t=%5.0fs  s=%6.1fkm  v=%5.1fkm/h dwell=%.0f  %s", app.tripTime, app.s / 1000, app.speed * 3.6, app.dwellLeft, R.regionAt(app.s)); }
+        }
+        LOGI("ARRIVED phase=%d trip=%.1fs (%.2f min) vmax=%.1fkm/h", app.phase, app.tripTime, app.tripTime / 60, vmax * 3.6);
+        app.shutdown(); return 0;
+    }
     const int SS = 2;                                   // supersample for clean edges
     StereoTarget rt; rt.init(W * SS, H * SS, 1);
     GLuint color; glGenTextures(1, &color); glBindTexture(GL_TEXTURE_2D_ARRAY, color);

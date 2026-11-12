@@ -133,7 +133,7 @@ void World::genScene(int jx, int jn, int lod, ChunkData& out) {
                 int sv = (int)(170 + 85 * hashf(hs + 4));
                 float u0 = (sprite % 4) * 0.25f, v0 = (sprite / 4) * 0.5f;
                 Vec3 p((float)(X - out.origin.x), gy - 0.3f - (float)out.origin.y, (float)(-Zn - out.origin.z));
-                addBill(out.trees, p, hw, 0, hgt, u0 + 0.004f, v0 + 0.004f, u0 + 0.246f, v0 + 0.496f, ((uint32_t)sv << 24) | ((uint32_t)sv << 16) | ((uint32_t)sv << 8) | (uint32_t)(sprite <= 1 ? 0 : (sprite == 7 ? 128 : 255)));
+                addBill(out.trees, p, hw, 0, hgt, u0 + 0.004f, v0 + 0.004f, u0 + 0.246f, v0 + 0.496f, ((uint32_t)sv << 24) | ((hash32(hs + 9) & 255u) << 16) | ((uint32_t)sv << 8) | (uint32_t)(sprite <= 1 ? 0 : (sprite == 7 ? 128 : 255)));
             }
         }
     }
@@ -148,11 +148,12 @@ void World::genScene(int jx, int jn, int lod, ChunkData& out) {
                 const uint8_t* p = d.rbody.data() + d.roff[first + k];
                 uint8_t cls = p[0]; uint16_t np; float wdt; memcpy(&np, p + 2, 2); memcpy(&wdt, p + 4, 4); p += 8;
                 if (np < 2) continue;
-                std::vector<Vec3> c(np); std::vector<float> gnd(np), ya(np);
+                std::vector<Vec3> c(np); std::vector<float> gnd(np), ya(np); std::vector<uint8_t> onRoad(np, 0);
                 for (int q = 0; q < np; q++) {
                     float v[4]; memcpy(v, p + q * 16, 16);
                     double X = d.rX0 + v[0], Z = -(d.rN0 + v[1]);
-                    gnd[q] = d.ground(X, Z) + 0.22f; ya[q] = v[2];
+                    RouteProj rp; gnd[q] = d.ground(X, Z, &rp) + 0.22f; ya[q] = v[2];
+                    if (rp.dist < 1e8f) { float qq = rp.lat > 0 ? rp.lat - R.extR[rp.i] : -rp.lat - R.extL[rp.i]; onRoad[q] = qq < 2.5f; }
                     c[q] = Vec3((float)(X - out.origin.x), 0, (float)(Z - out.origin.z));
                 }
                 for (int q = 0; q < np; q++) {
@@ -188,7 +189,11 @@ void World::genScene(int jx, int jn, int lod, ChunkData& out) {
                                 Vec3 a0 = a - Vec3(0, std::min(clear0 + 0.4f, 2.2f), 0), b0 = b - Vec3(0, std::min(clear + 0.4f, 2.2f), 0), a1 = a + Vec3(0, 0.95f, 0), b1 = b + Vec3(0, 0.95f, 0);
                                 if (sd > 0) { L.quad(a0, b0, b1, a1); L.quad(b0, a0, a1, b1); } else { L.quad(b0, a0, a1, b1); L.quad(a0, b0, b1, a1); }
                             }
-                            if (clear > 5.f && (q % 3) == 0) {    // piers
+                            {   // underside of the deck
+                                Vec3 a = c[q - 1] - r0 * hw - Vec3(0, 0.9f, 0), b = c[q - 1] + r0 * hw - Vec3(0, 0.9f, 0), e = c[q] + r0 * hw - Vec3(0, 0.9f, 0), g2 = c[q] - r0 * hw - Vec3(0, 0.9f, 0);
+                                L.color(0x8a8780); L.quad(b, a, g2, e);
+                            }
+                            if (clear > 5.f && (q % 3) == 0 && !onRoad[q]) {    // piers (never on the expressway itself)
                                 L.color(0x8f8c85);
                                 L.box(Mat4::basis(r0, Vec3(0, 1, 0), -d0, c[q]), Vec3(-hw * 0.5f, -clear - 1.5f, -0.6f), Vec3(hw * 0.5f, -1.2f, 0.6f), 1 | 2 | 16 | 32);
                             }

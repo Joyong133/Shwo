@@ -307,8 +307,10 @@ void android_main(android_app* app) {
         }
     }
     if (!ok) LOGE("initialisation failed - exiting");
-    XrTime lastTime = 0;
+    XrTime lastTime = 0; bool audioPaused = false;
     while (ok && !app->destroyRequested && !X.exitRequested) {
+        bool wantPaused = !X.resumed || !X.sessionRunning;
+        if (wantPaused != audioPaused) { audioPaused = wantPaused; game->audio.setPaused(audioPaused); }
         // Android events
         for (;;) {
             int events = 0; android_poll_source* src = nullptr;

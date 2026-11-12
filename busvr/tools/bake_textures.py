@@ -52,12 +52,13 @@ def terrain():
     split(0, 0, N, N, 5)
     c = c + 0.05 * (fnoise(N, 1.2, 8) - 0.5); c = norm(c, 0.5, 1.0)
     L.append(np.stack([c * (1 + 0.05 * hue), c, c * (1 - 0.07 * hue)], 2))
-    # urban ground: pale concrete / dirt mix with rectilinear patches
+    # urban ground: pale paving with faint slab patches
     r = np.random.default_rng(9); u = np.full((N, N), 0.5, np.float32)
-    for _ in range(90):
-        x0, y0 = r.integers(0, N, 2); w, hh = r.integers(20, 110, 2); v = r.uniform(-0.09, 0.09)
+    for _ in range(40):
+        x0, y0 = r.integers(0, N, 2); w, hh = r.integers(40, 160, 2); v = r.uniform(-0.035, 0.035)
         ys = (np.arange(y0, y0 + hh) % N)[:, None]; xs = (np.arange(x0, x0 + w) % N)[None, :]; u[ys, xs] += v
-    u = norm(u + 0.35 * (fnoise(N, 0.9, 10) - 0.5), 0.5, 1.0); L.append(np.stack([u * 1.01, u, u * 0.98], 2))
+    u = u + 0.10 * (fnoise(N, 1.6, 10) - 0.5) + 0.05 * (fnoise(N, 0.3, 16) - 0.5)
+    u = np.clip(0.5 + (u - u.mean()), 0, 1); L.append(np.stack([u * 1.01, u, u * 0.98], 2))
     save_layers("terrain.png", [np.dstack([rgb(l), np.full((N, N, 1), 255, np.uint8)]) for l in L])
     a = norm(0.6 * fnoise(256, 0.3, 11) + 0.4 * fnoise(256, 1.4, 12), 0.5, 1.1)
     Image.fromarray(rgb(np.stack([a, a, a], 2))).save(os.path.join(OUT, "asphalt.png"), optimize=True)
@@ -66,73 +67,79 @@ def terrain():
 
 # ------------------------------------------------------------------ tree sprites (4 x 2 cells of 512 px, RGBA)
 def tree_cell(kind, seed):
+    """One sprite: crown built from overlapping lobes (shaded as rounded masses) with leaf-scale breakup and ragged edges."""
     S = 512; r = np.random.default_rng(seed)
-    col = np.zeros((S, S, 3), np.float32); alpha = np.zeros((S, S), np.float32); zbuf = np.full((S, S), -1e9, np.float32)
     yy, xx = np.mgrid[0:S, 0:S].astype(np.float32)
-    def blob(cx, cy, rx, ry, base, z, light=1.0, rough=0.0):
-        d = ((xx - cx) / rx) ** 2 + ((yy - cy) / ry) ** 2
-        m = d < 1
-        if not m.any(): return
-        nz = np.sqrt(np.clip(1 - d, 0, 1)); nx = (xx - cx) / rx; ny = (yy - cy) / ry
-        shade = np.clip(0.38 + 0.42 * (-ny * 0.75 - nx * 0.35) + 0.36 * nz, 0.12, 1.25) * light
-        zz = z + nz * 0.5
-        w = m & (zz > zbuf)
-        for c in range(3): col[..., c] = np.where(w, base[c] * shade, col[..., c])
-        zbuf[w] = zz[w]; alpha[m] = 1
-    def trunk(x0, y0, x1, y1, w0, w1, base):
-        n = int(max(abs(y1 - y0), abs(x1 - x0))) + 1
-        for t in np.linspace(0, 1, n):
-            cx, cy, w = x0 + (x1 - x0) * t, y0 + (y1 - y0) * t, w0 + (w1 - w0) * t
-            xa, xb = int(cx - w), int(cx + w) + 1; ya = int(cy)
-            if 0 <= ya < S:
-                xs = np.arange(max(xa, 0), min(xb, S)); sh = 0.55 + 0.45 * (xs - cx) / max(w, 1) * -1
-                m = zbuf[ya, xs] < -10
-                for c in range(3): col[ya, xs, c] = np.where(m, base[c] * (0.7 + 0.3 * sh), col[ya, xs, c])
-                alpha[ya, xs] = 1; zbuf[ya, xs] = np.maximum(zbuf[ya, xs], -5)
-    grey = np.array([0.50, 0.52, 0.47]); bark = np.array([0.27, 0.22, 0.17])
-    if kind in ("pine", "pine2"):            # Korean red pine: bare trunk, irregular flat-topped crown of dark clumps
-        lean = r.uniform(-0.06, 0.06); bx = S / 2
-        trunk(bx, S - 1, bx + lean * S, S * 0.36, 9, 5, np.array([0.36, 0.24, 0.17]))
-        for k in range(5):
-            y = S * r.uniform(0.3, 0.55); trunk(bx + lean * S * 0.8, y + 20, bx + r.uniform(-120, 120), y - r.uniform(10, 60), 4, 2, np.array([0.33, 0.22, 0.16]))
-        base = np.array([0.34, 0.44, 0.30]) if kind == "pine" else np.array([0.30, 0.41, 0.29])
-        for k in range(150):
-            a = r.uniform(0, 2 * np.pi); rr = r.uniform(0, 1) ** 0.6
-            cx = bx + lean * S * 0.6 + np.cos(a) * rr * S * 0.36; cy = S * 0.3 + np.sin(a) * rr * S * 0.2 - 0.06 * S * (1 - rr)
-            blob(cx, cy, r.uniform(16, 38), r.uniform(9, 20), base * r.uniform(0.75, 1.15), r.uniform(0, 1))
-    elif kind in ("oak", "oak2", "ginkgo"):  # broadleaf: full rounded crown built from many leaf clumps
-        bx = S / 2; trunk(bx, S - 1, bx + r.uniform(-8, 8), S * 0.5, 10, 6, bark)
-        for k in range(4): trunk(bx, S * 0.62, bx + r.uniform(-110, 110), S * r.uniform(0.3, 0.45), 5, 2, bark)
-        cy0, rx0, ry0 = (S * 0.4, S * 0.4, S * 0.36) if kind != "ginkgo" else (S * 0.42, S * 0.3, S * 0.4)
-        for k in range(260):
-            a = r.uniform(0, 2 * np.pi); rr = r.uniform(0, 1) ** 0.55
-            cx = bx + np.cos(a) * rr * rx0; cy = cy0 + np.sin(a) * rr * ry0
-            if kind == "ginkgo": cx = bx + (cx - bx) * (0.55 + 0.6 * (cy / S))
-            blob(cx, cy, r.uniform(15, 34), r.uniform(12, 26), grey * r.uniform(0.78, 1.18), r.uniform(0, 1))
-    elif kind == "poplar":                   # tall narrow column (metasequoia / poplar rows)
-        bx = S / 2; trunk(bx, S - 1, bx, S * 0.2, 7, 2, bark)
-        for k in range(230):
-            t = r.uniform(0, 1); cy = S * (0.06 + 0.82 * t); half = S * (0.03 + 0.15 * np.sin(np.clip(t * 1.15, 0, 1) * np.pi) ** 0.7)
-            blob(bx + r.uniform(-half, half), cy, r.uniform(12, 24), r.uniform(12, 22), grey * r.uniform(0.78, 1.15), r.uniform(0, 1))
+    lobes = []; trunks = []
+    bark = np.array([0.30, 0.24, 0.19]); grey = np.array([0.50, 0.52, 0.47])
+    def lobe(cx, cy, rx, ry, depth, tone=1.0): lobes.append((cx, cy, rx, ry, depth, tone))
+    def trunk(x0, y0, x1, y1, w0, w1): trunks.append((x0, y0, x1, y1, w0, w1))
+    base = grey; bx = S / 2
+    if kind in ("pine", "pine2"):
+        base = np.array([0.33, 0.43, 0.30]) if kind == "pine" else np.array([0.29, 0.40, 0.28])
+        lean = r.uniform(-0.05, 0.05) * S
+        trunk(bx, S - 1, bx + lean, S * 0.30, 9, 4)
+        for k in range(6):
+            y = S * r.uniform(0.27, 0.56); x = bx + lean * (1 - (y / S - 0.3)) + r.uniform(-1, 1) * S * 0.26
+            trunk(bx + lean * 0.7, y + r.uniform(10, 40), x, y, 4, 2)
+            lobe(x, y - 6, r.uniform(55, 95), r.uniform(20, 34), r.uniform(0, 1), r.uniform(0.85, 1.1))
+        for k in range(22): lobe(bx + lean + r.uniform(-1, 1) * S * 0.27, S * r.uniform(0.18, 0.44), r.uniform(30, 62), r.uniform(12, 22), r.uniform(0, 1), r.uniform(0.8, 1.15))
+    elif kind in ("oak", "oak2", "ginkgo"):
+        trunk(bx, S - 1, bx + r.uniform(-6, 6), S * 0.52, 11, 6)
+        for k in range(3): trunk(bx, S * 0.66, bx + r.uniform(-90, 90), S * r.uniform(0.36, 0.5), 5, 2)
+        cy0, rx0, ry0 = (S * 0.40, S * 0.36, S * 0.31) if kind != "ginkgo" else (S * 0.43, S * 0.24, S * 0.37)
+        lobe(bx, cy0, rx0 * 0.75, ry0 * 0.8, 0.2)
+        for k in range(34):
+            a = r.uniform(0, 2 * np.pi); rr = r.uniform(0.15, 1.0) ** 0.7
+            lobe(bx + np.cos(a) * rr * rx0, cy0 + np.sin(a) * rr * ry0, r.uniform(26, 52) * (0.8 if kind == "ginkgo" else 1), r.uniform(22, 44), r.uniform(0, 1), r.uniform(0.86, 1.12))
+    elif kind == "poplar":
+        trunk(bx, S - 1, bx, S * 0.25, 7, 2)
+        for k in range(40):
+            t = r.uniform(0, 1); cy = S * (0.07 + 0.80 * t); half = S * (0.03 + 0.11 * np.sin(np.clip(t * 1.15, 0, 1) * np.pi) ** 0.7)
+            lobe(bx + r.uniform(-half, half), cy, r.uniform(18, 32), r.uniform(22, 40), r.uniform(0, 1), r.uniform(0.88, 1.1))
     elif kind == "shrub":
-        for k in range(160):
+        for k in range(30):
             a = r.uniform(0, np.pi); rr = r.uniform(0, 1) ** 0.6
-            blob(S / 2 + np.cos(a) * rr * S * 0.44, S * 0.97 - np.sin(a) * rr * S * 0.6, r.uniform(18, 40), r.uniform(14, 28), grey * r.uniform(0.75, 1.15), r.uniform(0, 1))
-    elif kind == "clump":                    # a stand of several crowns, used for distant woods
-        for t in range(6):
-            bx = S * r.uniform(0.18, 0.82); top = S * r.uniform(0.12, 0.45); wd = S * r.uniform(0.12, 0.2)
-            trunk(bx, S - 1, bx, top + 60, 5, 3, bark)
-            for k in range(70):
-                a = r.uniform(0, 2 * np.pi); rr = r.uniform(0, 1) ** 0.6
-                blob(bx + np.cos(a) * rr * wd, top + (S * 0.95 - top) * 0.4 + np.sin(a) * rr * (S - top) * 0.42, r.uniform(14, 30), r.uniform(12, 24), grey * r.uniform(0.75, 1.15), r.uniform(0, 1) + t)
-    # leaf-scale breakup + soft edge
-    n = fnoise(S, 0.5, seed + 100); col *= (0.86 + 0.28 * n)[..., None]
-    a_img = Image.fromarray(rgb(alpha)); a_soft = np.asarray(a_img.filter(ImageFilter.GaussianBlur(1.2))).astype(np.float32) / 255
-    edge = np.asarray(a_img.filter(ImageFilter.GaussianBlur(3))).astype(np.float32) / 255
-    a_fin = np.clip(a_soft * (0.55 + 0.9 * n) * 1.25, 0, 1) * (edge > 0.25)
-    # bleed colour outward so mip-mapped edges do not go dark
-    cimg = Image.fromarray(rgb(col)); blur = np.asarray(cimg.filter(ImageFilter.GaussianBlur(6))).astype(np.float32) / 255
-    wb = np.asarray(a_img.filter(ImageFilter.GaussianBlur(6))).astype(np.float32) / 255
+            lobe(S / 2 + np.cos(a) * rr * S * 0.36, S * 0.98 - np.sin(a) * rr * S * 0.5 - 30, r.uniform(30, 56), r.uniform(26, 44), r.uniform(0, 1), r.uniform(0.88, 1.1))
+    elif kind == "clump":
+        for t in range(5):
+            tx = S * r.uniform(0.2, 0.8); top = S * r.uniform(0.14, 0.4); wd = S * r.uniform(0.11, 0.17)
+            trunk(tx, S - 1, tx, top + 70, 5, 3)
+            for k in range(16):
+                a = r.uniform(0, 2 * np.pi); rr = r.uniform(0.1, 0.9)
+                lobe(tx + np.cos(a) * rr * wd, top + (S * 0.92 - top) * 0.42 + np.sin(a) * rr * (S - top) * 0.36, r.uniform(22, 40), r.uniform(22, 38), r.uniform(0, 1) + t, r.uniform(0.85, 1.1))
+    best = np.full((S, S), -1e9, np.float32); mass = np.full((S, S), -1.0, np.float32); shade = np.zeros((S, S), np.float32); tone = np.ones((S, S), np.float32)
+    for (cx, cy, rx, ry, depth, tn) in lobes:
+        nx = (xx - cx) / rx; ny = (yy - cy) / ry; d2 = nx * nx + ny * ny
+        val = 1 - d2; nz = np.sqrt(np.clip(val, 0, 1))
+        sh = 0.52 + 0.24 * (-ny * 0.8 - nx * 0.35) + 0.16 * nz           # light from the upper left
+        key = np.where(val > 0, depth * 0.35 + nz * 0.9, -1e9)
+        w = key > best
+        shade = np.where(w, sh, shade); tone = np.where(w, tn, tone); best = np.where(w, key, best)
+        mass = np.maximum(mass, val)
+    n1 = fnoise(S, 1.3, seed + 100); n2 = fnoise(S, 0.75, seed + 101); n3 = fnoise(S, 1.0, seed + 102); n4 = fnoise(S, 0.35, seed + 103)
+    n2 = np.clip((n2 - n2.mean()) / n2.std() * 0.22 + 0.5, 0, 1); n4 = np.clip((n4 - n4.mean()) / n4.std() * 0.22 + 0.5, 0, 1)
+    edge = mass + 0.50 * (n1 - 0.5) + 0.45 * (n2 - 0.5)
+    alpha = (edge > 0.16).astype(np.float32)
+    holes = (n3 > 0.70) & (mass < 0.55)                                   # sky showing through the outer foliage
+    alpha[holes] = 0
+    leaf = (0.50 + 1.0 * n2 + 0.3 * (n1 - 0.5)) * np.where(n4 < 0.36, 0.62, 1.0)   # leaf clumps and the dark gaps between them
+    inner = np.clip(mass * 1.4, 0.35, 1.0)                                 # edges of masses fall into shadow
+    col = base[None, None, :] * (shade * leaf * tone * (0.75 + 0.25 * inner))[..., None]
+    # trunk and branches behind the foliage
+    timg = Image.new("L", (S, S), 0); dr = ImageDraw.Draw(timg)
+    for (x0, y0, x1, y1, w0, w1) in trunks:
+        n = 24
+        for i in range(n):
+            t0, t1 = i / n, (i + 1) / n; w = w0 + (w1 - w0) * t0
+            dr.line([(x0 + (x1 - x0) * t0, y0 + (y1 - y0) * t0), (x0 + (x1 - x0) * t1, y0 + (y1 - y0) * t1)], fill=255, width=int(max(w * 2, 2)))
+    tm = np.asarray(timg).astype(np.float32) / 255
+    tcol = bark[None, None, :] * (0.75 + 0.5 * n2)[..., None] * (0.8 + 0.4 * (xx / S))[..., None]
+    showt = (tm > 0.5) & (alpha < 0.5)
+    col = np.where(showt[..., None], tcol, col); alpha = np.maximum(alpha, showt.astype(np.float32))
+    a_img = Image.fromarray(rgb(alpha)); a_fin = np.asarray(a_img.filter(ImageFilter.GaussianBlur(0.8))).astype(np.float32) / 255
+    cimg = Image.fromarray(rgb(col * alpha[..., None])); blur = np.asarray(cimg.filter(ImageFilter.GaussianBlur(7))).astype(np.float32) / 255
+    wb = np.asarray(a_img.filter(ImageFilter.GaussianBlur(7))).astype(np.float32) / 255
     fill = blur / np.maximum(wb, 0.02)[..., None]
     col = np.where((alpha > 0.5)[..., None], col, np.clip(fill, 0, 1))
     return np.dstack([rgb(col), rgb(a_fin)])
@@ -191,7 +198,7 @@ def interior():
     # 3 floor vinyl: speckled
     sp = (fnoise(S, 0.0, 4) > 0.86).astype(np.float32); L.append(flat(5, (0.5, 0.5, 0.5), 0.05) + 0.14 * sp[..., None])
     # 4 curtain: vertical pleats
-    pl = 0.5 + 0.5 * np.sin(xx * 2 * np.pi / 32 + 0.6 * np.sin(yy * 2 * np.pi / 256)); L.append(flat(6, (0.5, 0.5, 0.5), 0.04) * (0.62 + 0.5 * pl[..., None]))
+    pl = 0.5 + 0.5 * np.sin(yy * 2 * np.pi / 32 + 0.6 * np.sin(xx * 2 * np.pi / 256)); L.append(flat(6, (0.5, 0.5, 0.5), 0.04) * (0.62 + 0.5 * pl[..., None]))
     # 5 ceiling / wall trim fabric
     L.append(flat(7, (0.5, 0.5, 0.5), 0.07))
     # 6 brushed metal / dark rubber

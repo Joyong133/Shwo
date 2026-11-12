@@ -9,16 +9,16 @@ void wheels(MeshData& m, float halfTrack, float zFront, float zRear, float r, fl
         float z = ax ? zRear : zFront; float x0 = sd * (halfTrack - w * 0.5f), x1 = sd * (halfTrack + w * 0.5f);
         float ww = (dual && ax) ? w * 1.9f : w; if (dual && ax) x0 = sd * (halfTrack - ww + w * 0.5f);
         m.mat = MAT_LIT; m.layer = -1; m.color(TYRE);
-        m.cylinder(Mat4::identity(), Vec3(std::min(x0, x1), r, z), Vec3(std::max(x0, x1), r, z), r, r, 12, false);
+        m.cylinder(Mat4::identity(), Vec3(std::min(x0, x1), r, z), Vec3(std::max(x0, x1), r, z), r, r, 9, false);
         // outer face with a lighter hub
         Vec3 c(x1, r, z), n((float)sd, 0, 0);
         uint32_t i0 = m.vert(c, n);
-        for (int k = 0; k <= 12; k++) { float a = (float)k / 12 * 2 * PI; m.vert(c + Vec3(0, cosf(a) * r, sinf(a) * r), n); }
-        for (int k = 0; k < 12; k++) { if (sd > 0) m.tri(i0, i0 + 1 + k, i0 + 2 + k); else m.tri(i0, i0 + 2 + k, i0 + 1 + k); }
+        for (int k = 0; k <= 9; k++) { float a = (float)k / 9 * 2 * PI; m.vert(c + Vec3(0, cosf(a) * r, sinf(a) * r), n); }
+        for (int k = 0; k < 9; k++) { if (sd > 0) m.tri(i0, i0 + 1 + k, i0 + 2 + k); else m.tri(i0, i0 + 2 + k, i0 + 1 + k); }
         m.color(HUB);
         Vec3 c2 = c + n * 0.004f; i0 = m.vert(c2, n);
-        for (int k = 0; k <= 10; k++) { float a = (float)k / 10 * 2 * PI; m.vert(c2 + Vec3(0, cosf(a) * r * 0.55f, sinf(a) * r * 0.55f), n); }
-        for (int k = 0; k < 10; k++) { if (sd > 0) m.tri(i0, i0 + 1 + k, i0 + 2 + k); else m.tri(i0, i0 + 2 + k, i0 + 1 + k); }
+        for (int k = 0; k <= 8; k++) { float a = (float)k / 8 * 2 * PI; m.vert(c2 + Vec3(0, cosf(a) * r * 0.55f, sinf(a) * r * 0.55f), n); }
+        for (int k = 0; k < 8; k++) { if (sd > 0) m.tri(i0, i0 + 1 + k, i0 + 2 + k); else m.tri(i0, i0 + 2 + k, i0 + 1 + k); }
     }
 }
 // tapered glasshouse: bottom rectangle (hw0, z0a..z0b) at y0, top rectangle (hw1, z1a..z1b) at y1; glass sides, painted roof
