@@ -1,0 +1,3 @@
+# build intermediates & debug keystore
+build/
+*.idsig
