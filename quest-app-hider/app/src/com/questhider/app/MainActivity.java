@@ -340,10 +340,15 @@ public class MainActivity extends Activity
         } else if (T_REFRESH.equals(tag)) {
             refresh();
         } else if (T_A11Y.equals(tag)) {
-            openSettings(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS));
+            openAccessibility();
         } else if (T_APPINFO.equals(tag)) {
-            openSettings(new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
-                    Uri.parse("package:" + getPackageName())));
+            Intent info = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                    Uri.parse("package:" + getPackageName()));
+            info.setPackage("com.android.settings");
+            if (!tryStart(info)) {
+                openSettings(new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                        Uri.parse("package:" + getPackageName())));
+            }
         } else if (T_PIN_CHANGE.equals(tag)) {
             unlocked = false;
             showGate(true);
@@ -369,6 +374,40 @@ public class MainActivity extends Activity
     }
 
     // ----------------------------------------------------------------- helpers
+
+    /**
+     * Quest's own Settings > Accessibility page does not list third-party
+     * services, so go straight to the hidden stock Android settings screens.
+     */
+    private void openAccessibility() {
+        String s = "com.android.settings";
+        Intent[] tries = new Intent[] {
+            new Intent().setComponent(new ComponentName(s,
+                    "com.android.settings.Settings$AccessibilitySettingsActivity")),
+            new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).setPackage(s),
+            new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS),
+            new Intent().setComponent(new ComponentName(s, "com.android.settings.Settings")),
+        };
+        for (int i = 0; i < tries.length; i++) {
+            if (tryStart(tries[i])) {
+                if (i >= 2) {
+                    toast("안드로이드 설정에서 '접근성' → 'Quest App Hider 차단'을 찾아 켜세요.");
+                }
+                return;
+            }
+        }
+        toast("이 기기는 접근성 설정을 열 수 없어요.");
+    }
+
+    private boolean tryStart(Intent i) {
+        i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        try {
+            startActivity(i);
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
+    }
 
     private void openSettings(Intent i) {
         i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
