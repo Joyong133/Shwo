@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="primary">#3949AB</color>
+    <color name="primary_dark">#283593</color>
+    <color name="primary_soft">#E8EAF6</color>
+    <color name="bg">#F4F5FA</color>
+    <color name="card">#FFFFFF</color>
+    <color name="stroke">#E2E5EF</color>
+    <color name="text">#1E2230</color>
+    <color name="text_sub">#6B7185</color>
+    <color name="ok">#2E7D32</color>
+    <color name="ok_soft">#E8F5E9</color>
+    <color name="ng">#D32F2F</color>
+    <color name="ng_soft">#FDECEA</color>
+    <color name="warn">#EF8F00</color>
+    <color name="ic_bg">#3949AB</color>
+</resources>

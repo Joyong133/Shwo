@@ -1,0 +1,43 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'com.shwo.jpspeak'
+    compileSdk 35
+
+    defaultConfig {
+        applicationId 'com.shwo.jpspeak'
+        minSdk 26
+        targetSdk 35
+        versionCode 1
+        versionName '1.0'
+    }
+
+    // 개인 설치용 서명 키. 같은 키로 서명해야 새 버전을 덮어서 설치할 수 있습니다.
+    signingConfigs {
+        release {
+            storeFile file('jpspeak.keystore')
+            storePassword 'jpspeak123'
+            keyAlias 'jpspeak'
+            keyPassword 'jpspeak123'
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            signingConfig signingConfigs.release
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    lint {
+        abortOnError false
+        checkReleaseBuilds false
+    }
+}

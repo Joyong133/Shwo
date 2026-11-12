@@ -1,3 +1,5 @@
+> 📱 **일본어 따라말하기 앱(APK)** 은 [`japanese-speaking-app/`](japanese-speaking-app/README.md) 에 있습니다. 설치 파일: [`apk/japanese-speaking.apk`](apk/japanese-speaking.apk)
+
 # 훅업 배관 VR 실습
 
 반도체 FAB 훅업(Hook-up) 배관을 처음 하는 사람을 위한 VR 실습 시뮬레이터입니다.
