@@ -4,7 +4,7 @@ Meta Quest에서 **브라우저(`com.oculus.browser`) 같은 앱을 막는** 관
 **ADB 없이** 헤드셋 안에서만 설정할 수 있습니다.
 
 **APK 직접 다운로드 (.apk):**
-https://github.com/Joyong133/Shwo/raw/6199f990dc272fb2fa0638c0fe07e23e900cb343/quest-app-hider/quest-app-hider.apk
+https://github.com/Joyong133/Shwo/raw/993e62f7ba6242661623e5e1c8de0a9080721e6e/quest-app-hider/quest-app-hider.apk
 
 ---
 
