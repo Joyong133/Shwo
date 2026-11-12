@@ -1,0 +1,8 @@
+__pycache__/
+*.pyc
+busvr/build/
+busvr/android/.gradle/
+busvr/android/app/build/
+busvr/android/app/.cxx/
+busvr/android/build/
+busvr/android/local.properties
