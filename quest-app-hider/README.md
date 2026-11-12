@@ -1,101 +1,76 @@
-# Quest App Hider (앱 숨기기)
+# Quest App Hider (앱 차단 · 숨기기)
 
-Meta Quest(Horizon OS는 Android 기반)에서 **다른 앱을 숨기거나 다시 보이게** 하는 작은 관리용 앱입니다.
-브라우저(`com.oculus.browser`)처럼 라이브러리에 보이는 앱을 체크 한 번으로 감출 수 있습니다.
+Meta Quest에서 **브라우저(`com.oculus.browser`) 같은 앱을 막는** 관리용 앱입니다.
+**ADB 없이** 헤드셋 안에서만 설정할 수 있습니다.
 
-> 루팅은 필요 없습니다. 다만 안드로이드에서 앱을 숨기는 권한(`setApplicationHidden`)은
-> **기기 소유자(Device Owner)** 에게만 있어서, 설치 후 PC에서 **ADB로 한 번** 소유자 지정을 해야 합니다.
-
-빌드 결과물: **`quest-app-hider.apk`**
+**APK 직접 다운로드 (.apk):**
+https://github.com/Joyong133/Shwo/raw/ccr-8474d6cc-j432jn/quest-app-hider/quest-app-hider.apk
 
 ---
 
-## 작동 원리
+## 두 가지 모드
 
-- 안드로이드 `DevicePolicyManager.setApplicationHidden(admin, 패키지명, true/false)` 사용
-- `true` → 앱이 런처/라이브러리에서 사라짐, `false` → 다시 나타남 (되돌릴 수 있음)
-- 이 권한은 **Device Owner** 앱만 쓸 수 있음 → 설치 후 ADB로 1회 지정
+| 모드 | ADB | 하는 일 |
+|---|---|---|
+| **차단 (기본)** | 필요 없음 | 차단한 앱이 열리면 바로 닫고 🔒 "관리자가 차단한 앱" 화면을 띄움 |
+| 숨기기 (선택) | 1회 필요 | 아이콘 자체를 라이브러리에서 숨김 (Device Owner 권한) |
+
+안드로이드 보안 정책상 **아이콘을 완전히 없애는 것**은 ADB(또는 기업용 MDM) 없이는 불가능합니다.
+그래서 ADB 없이 쓰는 방식은 **열리는 순간 막는 방식**이고, 일반 자녀보호 앱과 같은 원리입니다.
 
 ---
 
-## 설치 & 설정 (PC + ADB 필요)
+## 설정 방법 (ADB 없이)
 
-### 1. Quest 준비
-- Meta 개발자 계정 등록 후, **Meta Horizon 모바일 앱 → 헤드셋 → 개발자 모드 ON**
-- USB로 PC에 연결하고 헤드셋 안에서 **USB 디버깅 허용**
-- 중요: `dpm set-device-owner`는 **기기에 다른 계정/직장 프로필이 없어야** 성공합니다.
+1. **설치** — 헤드셋의 Quest 브라우저로 위 링크를 열어 `.apk`를 받고 설치합니다.
+   (알 수 없는 출처 설치를 허용해야 하며, 펌웨어 버전에 따라 헤드셋 안에서 바로
+   설치가 안 될 수 있습니다. 그런 경우 설치 단계만은 SideQuest 같은 도구가 필요합니다.)
+2. **앱 실행** — 라이브러리 → *알 수 없는 출처* → **Quest App Hider**
+3. **관리자 PIN 설정** (숫자 4자리 이상) — 이후 설정을 바꾸려면 이 PIN이 필요합니다.
+4. **① 접근성에서 차단 켜기** 버튼 → *설치된 앱/서비스* → **Quest App Hider 차단** 켜기
+   - 회색으로 막혀 있으면: **앱 정보 (제한된 설정 허용)** 버튼 → 오른쪽 위 ⋮ →
+     **제한된 설정 허용** → 다시 4번
+5. 목록에서 막을 앱(예: **Browser**) 옆 **차단** 누르기 → `차단됨 · 해제` 로 바뀌면 완료
 
-### 2. 설치
-```bash
-adb install -r quest-app-hider.apk
-```
+상단 상태가 `✓ 차단 서비스 켜짐` 이면 작동 중입니다.
 
-### 3. 기기 소유자 지정 (핵심 · 1회만)
+## 안전장치
+- 관리 화면은 PIN으로 잠기며, 화면을 벗어나면 자동으로 다시 잠깁니다.
+- 시스템 UI, 홈 런처, 설정, 이 앱 자체는 **차단할 수 없게** 막아뒀습니다 (헤드셋이 먹통이 되지 않도록).
+- 차단 서비스는 화면 내용을 읽지 않고, **어떤 앱이 열렸는지만** 확인합니다.
+
+## 한계
+- 차단한 앱의 아이콘은 라이브러리에 그대로 보입니다 (누르면 바로 닫힘).
+- 접근성 설정을 직접 끄면 차단이 풀립니다. ADB 없이 이것까지 막을 방법은 없습니다.
+- 실제 Quest 기기에서는 아직 테스트하지 않았습니다. Horizon OS 버전에 따라 차단 화면이
+  뜨는 방식이 다를 수 있습니다.
+
+---
+
+## (선택) 아이콘까지 숨기기 — ADB 1회
 ```bash
 adb shell dpm set-device-owner com.questhider.app/.HiderAdminReceiver
 ```
-`Success: Device owner set ...` 가 나오면 완료입니다.
-
-> `java.lang.IllegalStateException: Not allowed to set the device owner ...` 가 나오면
-> 기기에 이미 계정이 추가돼 있는 경우입니다. 설정에서 계정을 제거하거나,
-> 공장초기화 직후(계정 추가 전)에 실행하세요.
-
-### 4. 사용
-- Quest 라이브러리 → **알 수 없는 출처** 섹션에서 **Quest App Hider** 실행
-- 상단에 `✓ 기기 소유자로 설정됨` 이 보이면 준비 완료
-- 각 앱 줄의 **숨기기 / 복원** 버튼으로 토글
-- **모든 패키지 표시** 체크박스: 런처에 안 뜨는 시스템 패키지까지 표시
-
----
-
-## 제거할 때 (중요)
-
-Device Owner 앱은 그냥 지우려 하면 막힙니다. 앱 안의 **`기기 소유자 해제`** 버튼을 먼저 누르세요.
-그러면 숨긴 앱을 모두 복원하고 소유자 권한을 반납하므로, 이후 일반적으로 삭제할 수 있습니다.
-```bash
-adb uninstall com.questhider.app
-```
-(버튼 없이 ADB만으로 강제로 하려면 보통 공장초기화가 필요합니다.)
+설정하면 각 앱 줄에 **숨기기** 버튼이 추가됩니다. 앱을 지우기 전에 반드시 앱 안의
+**기기 소유자 해제** 버튼을 먼저 누르세요 (안 그러면 공장초기화가 필요할 수 있음).
 
 ---
 
 ## 직접 빌드하기
-
 Android SDK(build-tools 34.0.0, platform android-34)만 있으면 Gradle 없이 빌드됩니다.
-
 ```bash
 export ANDROID_HOME=/path/to/android-sdk
-# (선택) 최신 r8.jar 를 $ANDROID_HOME/r8.jar 로 두면 그걸 사용합니다
-./build.sh
-# → quest-app-hider.apk 생성
+# (선택) 최신 r8.jar 를 $ANDROID_HOME/r8.jar 로 두면 그걸 사용합니다 (JDK 21 호환)
+./build.sh   # → quest-app-hider.apk
 ```
-
-`build.sh`가 하는 일: `aapt2`로 리소스/매니페스트 링크 → `javac`로 컴파일 →
-`d8`(또는 `r8.jar`)로 dex 변환 → dex 패키징 → `zipalign` → `apksigner` 서명.
-
-> 참고: build-tools 34에 포함된 `d8`(r8 8.2.2-dev)은 JDK 21에서 크래시하는 문제가 있어,
-> 스크립트는 `$ANDROID_HOME/r8.jar`(최신 r8)가 있으면 그것을 우선 사용합니다.
-
----
 
 ## 구조
-
 ```
-quest-app-hider/
-├── app/
-│   ├── AndroidManifest.xml
-│   ├── res/
-│   │   ├── values/strings.xml
-│   │   └── xml/device_admin.xml
-│   └── src/com/questhider/app/
-│       ├── MainActivity.java        # 앱 목록 UI + 숨기기/복원 로직
-│       ├── HiderAdminReceiver.java  # DeviceAdminReceiver (소유자 지정 대상)
-│       └── AppLabelComparator.java  # 라벨 기준 정렬
-├── build.sh                         # SDK 도구로 직접 APK 빌드
-└── quest-app-hider.apk              # 빌드 결과물 (서명됨, 바로 설치 가능)
+app/src/com/questhider/app/
+├── MainActivity.java        # PIN 잠금 + 앱 목록 + 차단/숨기기
+├── BlockerService.java      # 접근성 서비스: 차단 앱이 열리면 닫음 (ADB 불필요)
+├── BlockedActivity.java     # 🔒 차단 안내 화면
+├── Prefs.java               # 차단 목록 / PIN(해시) 저장
+├── HiderAdminReceiver.java  # (선택) Device Owner 숨기기 모드
+└── AppLabelComparator.java
 ```
-
-## 참고 / 한계
-- 일부 핵심 시스템 패키지는 `setApplicationHidden`이 거부될 수 있어 "변경 실패" 토스트가 뜹니다.
-- 숨김은 되돌릴 수 있습니다(복원 버튼). 데이터 삭제가 아니라 '숨김' 상태 전환입니다.
-- 서명은 디버그 키입니다. 개인/사이드로드 용도로는 충분하며, 스토어 배포용은 아닙니다.

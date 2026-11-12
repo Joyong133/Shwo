@@ -27,7 +27,7 @@ echo "==> [2/7] link resources + manifest"
 echo "==> [3/7] compile java"
 find "$APP/src" "$OUT/gen" -name '*.java' > "$OUT/sources.txt"
 javac -source 8 -target 8 -nowarn -classpath "$PLAT" \
-  -d "$OUT/classes" @"$OUT/sources.txt" 2>/dev/null
+  -Xlint:-options -d "$OUT/classes" @"$OUT/sources.txt"
 
 echo "==> [4/7] dex"
 mapfile -t CLASSES < <(find "$OUT/classes" -name '*.class')

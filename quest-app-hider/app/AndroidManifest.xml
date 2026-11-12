@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="com.questhider.app"
-    android:versionCode="1"
-    android:versionName="1.0">
+    android:versionCode="2"
+    android:versionName="2.0">
 
     <!-- Needed to enumerate every installed package (incl. system apps like the browser) -->
     <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" />
@@ -26,6 +26,29 @@
             </intent-filter>
         </activity>
 
+        <activity
+            android:name=".BlockedActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:launchMode="singleTask"
+            android:taskAffinity=""
+            android:theme="@android:style/Theme.Material.NoActionBar" />
+
+        <!-- No-ADB mode: accessibility service that closes blocked apps -->
+        <service
+            android:name=".BlockerService"
+            android:exported="true"
+            android:label="@string/a11y_name"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/blocker_service" />
+        </service>
+
+        <!-- Optional ADB mode: Device Owner can truly hide apps -->
         <receiver
             android:name=".HiderAdminReceiver"
             android:description="@string/admin_desc"
