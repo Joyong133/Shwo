@@ -1,0 +1,50 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'com.shwo.starlightdash'
+    compileSdk 36
+
+    defaultConfig {
+        applicationId 'com.shwo.starlightdash'
+        minSdk 24
+        targetSdk 35
+        versionCode 1
+        versionName '1.0.0'
+    }
+
+    // 사이드로드용 서명 키. 저장소에 함께 두어 다시 빌드해도 같은 서명으로 덮어 설치할 수 있다.
+    signingConfigs {
+        release {
+            storeFile file('../keystore/starlight-dash.jks')
+            storePassword 'starlight'
+            keyAlias 'starlight'
+            keyPassword 'starlight'
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            signingConfig signingConfigs.release
+        }
+    }
+
+    // 게임 본체는 ../../www (npm run build 결과물)
+    sourceSets {
+        main {
+            assets.srcDirs = ['../../www']
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    lint {
+        checkReleaseBuilds false
+        abortOnError false
+    }
+}
