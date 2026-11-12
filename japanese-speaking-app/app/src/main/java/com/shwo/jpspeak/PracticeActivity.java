@@ -165,9 +165,7 @@ public class PracticeActivity extends Activity {
         lastOk = null;
 
         chip.setText(Levels.name(cur.level) + " · " + cur.number + "번");
-        counter.setText((pos + 1) + " / " + queue.size());
-        bar.setMax(queue.size());
-        bar.setProgress(pos);
+        updateCounter();
         meaning.setText(cur.korean);
         resultBox.setVisibility(View.GONE);
         status.setText("🔊 발음을 듣고, 🎤를 눌러 따라 말해 보세요");
@@ -293,6 +291,22 @@ public class PracticeActivity extends Activity {
         else bestInfo.setText("최고 " + Math.max(0, best) + "% · " + tries + "회 시도" + (progress.passed(cur.id) ? " · 통과 ✓" : ""));
     }
 
+    /** 레벨 연습: 이 레벨에서 통과한 문장 수 / 복습: 몇 번째 문장인지. */
+    private void updateCounter() {
+        if (MODE_REVIEW.equals(mode)) {
+            counter.setText((pos + 1) + " / " + queue.size());
+            bar.setMax(queue.size());
+            bar.setProgress(pos);
+        } else {
+            List<Sentence> all = Levels.sentences(this, mode);
+            int p = 0;
+            for (Sentence x : all) if (progress.passed(x.id)) p++;
+            counter.setText("통과 " + p + " / " + all.size());
+            bar.setMax(all.size());
+            bar.setProgress(p);
+        }
+    }
+
     private void updateNextButton() {
         btnNext.setAlpha(passedNow ? 1f : 0.35f);
         btnNext.setEnabled(passedNow);
@@ -304,6 +318,7 @@ public class PracticeActivity extends Activity {
         boolean first = progress.record(cur.id, r.percent, pass);
         renderSentence(r.segOk);
         updateBestInfo();
+        updateCounter();
 
         resultBox.setVisibility(View.VISIBLE);
         resultBox.setBackgroundResource(pass ? R.drawable.bg_result_ok : R.drawable.bg_result_ng);
