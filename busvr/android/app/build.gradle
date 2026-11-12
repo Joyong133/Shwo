@@ -39,6 +39,8 @@ android {
     }
     androidResources { noCompress 'z', 'png' }
     buildFeatures { prefab true }
+    // Quest apps target API 32; this is not a Play Store build.
+    lint { checkReleaseBuilds false; abortOnError false }
     packagingOptions { jniLibs { useLegacyPackaging false } }
 }
 
