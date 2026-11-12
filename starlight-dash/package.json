@@ -1,6 +1,6 @@
 {
   "name": "starlight-dash",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "private": true,
   "description": "별빛 질주 — 3D 무한 달리기 게임 (웹 + 안드로이드 APK)",
   "type": "module",

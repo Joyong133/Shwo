@@ -11,7 +11,7 @@ import { PATH_W, HALF_W, LANE_X, JUMP_V, GRAV, SLIDE_TIME, clamp, speedAt } from
 const CAM = {
   play: { back: 6.2, up: 4.0, side: 0, ahead: 12, lookY: 1.6 },
   home: { back: 5.0, up: 2.3, side: 2.3, ahead: 2.5, lookY: 1.9 },
-  show: { back: -3.6, up: 1.5, side: 1.4, ahead: 0, lookY: -0.5 },
+  show: { back: -4.6, up: 1.6, side: 1.7, ahead: 0, lookY: -0.9 },
 };
 const CAM_KEYS = ['back', 'up', 'side', 'ahead', 'lookY'];
 const FX_KEYS = ['magnet', 'shield', 'boost', 'double'];
@@ -570,15 +570,15 @@ export class Game {
     this.updateHints();
     // 부스터 중에는 별가루를 뿌린다
     if ((run.fx.boost > 0 || run.headstart > 0) && Math.random() < 0.6) {
-      p.seg.toWorld(p.s - 0.6, p.x, p.y + 0.8, _v);
-      this.bursts.spawn(_v, 0xffd23f, 1, { speed: 2, life: 0.5, size: 0.16, gravity: -2, up: 1, spread: 0.8 });
+      p.seg.toWorld(p.s + 0.4, p.x, p.y + 0.8, _v);
+      this.bursts.spawn(_v, 0xffd23f, 1, { speed: 1.2, life: 0.45, size: 0.09, gravity: -2, up: 1, spread: 0.7 });
     }
   }
 
   updateHints() {
     const h = this.save.data.hints, p = this.player, seg = p.seg;
     if (h.jump >= 3 && h.slide >= 3 && h.lane >= 3 && h.turn >= 4) return;
-    if (this.cheat) return;
+    if (this.cheat || this.run.headstart > 0 || this.run.fx.boost > 0) return;
     const lookA = this.speed * 0.35, lookB = this.speed * 1.0;
     if (h.turn < 4 && p.s >= seg.turnZoneStart && !p.pendingTurn) {
       this.ui.hint(seg.turn === 'T' ? 'both' : seg.turn === 'L' ? 'left' : 'right', '코너! 옆으로 스와이프');

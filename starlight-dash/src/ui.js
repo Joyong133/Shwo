@@ -9,7 +9,7 @@ const FX_PILLS = [
   ['magnet', 'magnet', POWERUPS.magnet.color], ['shield', 'shield', POWERUPS.shield.color],
   ['boost', 'bolt', POWERUPS.boost.color], ['double', 'x2', POWERUPS.double.color], ['head', 'rocket', '#b388ff'],
 ];
-const VERSION = '1.0.0';
+const VERSION = '1.0.1';
 
 export class UI {
   constructor(root, save, sound) {

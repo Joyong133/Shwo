@@ -371,9 +371,9 @@ export const BIOMES = [
   {
     id: 'sky', name: '하늘 정원',
     sky: [0x2f7fe8, 0xcfe8ff], fog: [55, 165],
-    sun: 0xfff6dc, sunI: 2.3, hemiSky: 0xe9f5ff, hemiGround: 0xcfd8ee, hemiI: 1.9,
+    sun: 0xfff6dc, sunI: 1.9, hemiSky: 0xe9f5ff, hemiGround: 0xcfd8ee, hemiI: 1.5,
     base: 0xf6faff, baseGlow: 0x000000, stars: 0, clouds: 1,
-    pal: { top: 0xf1ebdf, top2: 0xe5ddce, corner: 0xfaf5ea, side: 0xcfc6b8, trim: 0xe8b84a, pillar: 0xe2dccf, wall: 0xd9b565, warn: 0xff5d8f, smash: 0xf2ede4 },
+    pal: { top: 0xe3d8c4, top2: 0xd3c7b0, corner: 0xeee3cf, side: 0xcfc6b8, trim: 0xe8b84a, pillar: 0xe2dccf, wall: 0xd9b565, warn: 0xff5d8f, smash: 0xf2ede4 },
     particles: { color: 0xfff3b0, size: 0.18, vx: 0.3, vy: 0.6, opacity: 0.85, count: 60 },
     deco: decoSky, decoStep: 5.4, decoProb: 0.8,
   },
