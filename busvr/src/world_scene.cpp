@@ -173,7 +173,7 @@ void World::genScene(int jx, int jn, int lod, ChunkData& out) {
                     Vec3 dir = normalize(Vec3(c[std::min(q + 1, np - 1)].x - c[std::max(q - 1, 0)].x, 0, c[std::min(q + 1, np - 1)].z - c[std::max(q - 1, 0)].z));
                     Vec3 rt(-dir.z, 0, dir.x);
                     if (q > 0) along += length(Vec3(c[q].x - c[q - 1].x, 0, c[q].z - c[q - 1].z));
-                    D.cr = 2; D.cg = 6; D.cb = (uint8_t)cls; D.ca = 255; D.layer = wdt;
+                    D.cr = 2; D.cg = 6; D.cb = 0; D.ca = 255; D.layer = wdt; (void)cls;
                     D.vert(c[q] - rt * hw, Vec3(0, 1, 0), -hw, along); D.vert(c[q] + rt * hw, Vec3(0, 1, 0), hw, along);
                     rad = std::max(rad, length(c[q]) + hw);
                     // retaining walls / parapets where the road stands clear of the ground

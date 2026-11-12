@@ -88,7 +88,8 @@ struct ChunkData {              // CPU side, produced on the worker thread
     BillMeshData glow;          // additive night glows
 };
 struct Chunk {
-    uint64_t key = 0; int type = 0, lod = 0; bool ready = false, pending = false; int stamp = 0;
+    uint64_t key = 0; int type = 0, lod = -1, wantLod = -1; bool ready = false, pending = false; int stamp = 0;
+    std::vector<TVtx> cpuV; uint64_t cover = 0;      // far tiles keep their vertices so they can sink under loaded near tiles
     Vec3d origin; float radius = 0;
     Mesh terrain, road, decal, lit, glass, text, trees, glow;
     void destroy() { terrain.destroy(); road.destroy(); decal.destroy(); lit.destroy(); glass.destroy(); text.destroy(); trees.destroy(); glow.destroy(); }

@@ -21,7 +21,9 @@ enum Mat : uint8_t {
     MAT_CABIN = 3,    // inside the bus: lit by cabin light, never fogged
     MAT_PAINT = 4,    // glossy vehicle paint
     MAT_TUNNEL = 5,   // tunnel lining: lit by tunnel lamps
-    MAT_NIGHTLAMP = 6 // emissive only at night (street lamps, head/tail lights)
+    MAT_NIGHTLAMP = 6,// emissive only at night (street lamps, head/tail lights)
+    MAT_SIGN = 7,     // retro-reflective road sign: lights up in the headlights at night
+    MAT_UI = 8        // exact colour, unlit, never fogged (menus, screens)
 };
 struct Vtx {          // 32 bytes
     float px, py, pz;

@@ -1,0 +1,47 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'kr.busvr.seoulbusan'
+    compileSdk 35
+    ndkVersion '27.2.12479018'
+
+    defaultConfig {
+        applicationId 'kr.busvr.seoulbusan'
+        minSdk 29
+        targetSdk 32
+        versionCode 1
+        versionName '1.0'
+        ndk { abiFilters 'arm64-v8a' }
+        externalNativeBuild {
+            cmake {
+                arguments '-DANDROID_STL=c++_static'
+                cppFlags '-std=c++17 -fno-rtti'
+            }
+        }
+    }
+    buildTypes {
+        release {
+            minifyEnabled false
+            // Signed with the debug key so the APK can be sideloaded straight away.
+            signingConfig signingConfigs.debug
+        }
+    }
+    externalNativeBuild {
+        cmake {
+            path 'src/main/cpp/CMakeLists.txt'
+            version '3.22.1'
+        }
+    }
+    sourceSets {
+        main { assets.srcDirs = ['../../assets'] }
+    }
+    androidResources { noCompress 'z', 'png' }
+    buildFeatures { prefab true }
+    packagingOptions { jniLibs { useLegacyPackaging false } }
+}
+
+dependencies {
+    implementation 'org.khronos.openxr:openxr_loader_for_android:1.1.49'
+}

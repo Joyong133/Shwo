@@ -172,7 +172,7 @@ bool Shader::build(const char* name, const char* vs, const char* fs) {
     GLuint v = compile(GL_VERTEX_SHADER, hv + common + vs, name);
     GLuint f = compile(GL_FRAGMENT_SHADER, hf + common + fs, name);
     prog = glCreateProgram(); glAttachShader(prog, v); glAttachShader(prog, f);
-    glBindAttribLocation(prog, 0, "aPos"); glBindAttribLocation(prog, 1, "aNrm"); glBindAttribLocation(prog, 2, "aCol");
+    glBindAttribLocation(prog, 0, "aPos"); glBindAttribLocation(prog, 1, "aNrm"); glBindAttribLocation(prog, 1, "aOff"); glBindAttribLocation(prog, 2, "aCol");
     glBindAttribLocation(prog, 3, "aUv"); glBindAttribLocation(prog, 4, "aMat");
     glLinkProgram(prog);
     GLint ok = 0; glGetProgramiv(prog, GL_LINK_STATUS, &ok);

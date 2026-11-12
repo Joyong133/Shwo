@@ -139,7 +139,7 @@ rest = (s > S_REST - 30) & (s < S_REST + 820)
 
 # ---------- bus lateral offset ----------
 W = lanes * 3.6
-def lane_c(L, i): return -L * 3.6 / 2 + (i - 0.5) * 3.6
+def lane_c(L, i): return -np.asarray(L, float) * 3.6 / 2 + (np.asarray(i, float) - 0.5) * 3.6
 off = np.zeros(N)
 m2 = kind == 2
 off[m2] = np.where(buslane[m2], lane_c(lanes[m2], 1), lane_c(lanes[m2], 2))
