@@ -1,3 +1,5 @@
+> 📱 **새 프로젝트: [애니쉐도잉 – 일본 애니 명대사 따라읽기 앱](anime-shadowing/README.md)** · APK: [`apk/AnimeShadowing-v1.0.apk`](apk/AnimeShadowing-v1.0.apk)
+
 # 훅업 배관 VR 실습
 
 반도체 FAB 훅업(Hook-up) 배관을 처음 하는 사람을 위한 VR 실습 시뮬레이터입니다.

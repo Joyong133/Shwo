@@ -1,0 +1,15 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp"
+    android:viewportWidth="108" android:viewportHeight="108">
+    <!-- 말풍선 -->
+    <path android:fillColor="#FFFFFF"
+        android:pathData="M36,30 H72 A10,10 0 0 1 82,40 V62 A10,10 0 0 1 72,72 H48 L35,83 L38,72 H36 A10,10 0 0 1 26,62 V40 A10,10 0 0 1 36,30 Z" />
+    <!-- 마이크 -->
+    <path android:fillColor="#E5484D"
+        android:pathData="M54,36 A5,5 0 0 1 59,41 V51 A5,5 0 0 1 49,51 V41 A5,5 0 0 1 54,36 Z" />
+    <path android:strokeColor="#E5484D" android:strokeWidth="2.8" android:strokeLineCap="round"
+        android:pathData="M45,50 A9,9 0 0 0 63,50 M54,59 V65 M49,65 H59" />
+    <!-- 반짝이 -->
+    <path android:fillColor="#FFD84D"
+        android:pathData="M76,22 L78,27 L83,29 L78,31 L76,36 L74,31 L69,29 L74,27 Z" />
+</vector>

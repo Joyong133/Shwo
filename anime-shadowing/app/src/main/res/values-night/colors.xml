@@ -1,0 +1,15 @@
+<resources>
+    <color name="brand">#FF6B70</color>
+    <color name="brand_container">#5A1A1E</color>
+    <color name="brand_on_container">#FFDADA</color>
+    <color name="accent">#B4A3FF</color>
+    <color name="bg">#151213</color>
+    <color name="card">#221D1E</color>
+    <color name="text_main">#F2EBEC</color>
+    <color name="text_sub">#B3A8AA</color>
+    <color name="hangul">#B4A3FF</color>
+    <color name="score_good">#4CC383</color>
+    <color name="score_mid">#F2B33D</color>
+    <color name="score_bad">#FF6B70</color>
+    <color name="score_none">#6F6567</color>
+</resources>
