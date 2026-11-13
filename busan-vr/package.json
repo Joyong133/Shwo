@@ -1,0 +1,27 @@
+{
+  "name": "busan-vr",
+  "version": "1.0.0",
+  "private": true,
+  "description": "부산 VR 여행 - Meta Quest(WebXR PWA → APK) + 휴대폰/PC 테스트 겸용",
+  "type": "module",
+  "scripts": {
+    "prepare-assets": "node scripts/prepare-assets.mjs",
+    "predev": "node scripts/prepare-assets.mjs",
+    "dev": "vite --host",
+    "prebuild": "node scripts/prepare-assets.mjs",
+    "build": "vite build",
+    "preview": "vite preview --host",
+    "apk:key": "node scripts/build-apk.mjs key",
+    "apk": "node scripts/build-apk.mjs build",
+    "apk:install": "adb install -r busan-vr.apk"
+  },
+  "dependencies": {
+    "three": "0.170.0"
+  },
+  "devDependencies": {
+    "@meta-quest/bubblewrap-cli": "1.24.1",
+    "@vitejs/plugin-basic-ssl": "^2.3.0",
+    "@webxr-input-profiles/assets": "^1.0.19",
+    "vite": "^8.3.8"
+  }
+}

@@ -1,0 +1,11 @@
+node_modules/
+dist/
+# 생성물: 아이콘·컨트롤러 모델(prepare-assets), 서명 키·Android 프로젝트·APK(build-apk)
+public/icons/
+public/xr-profiles/
+public/.well-known/
+android/
+*.apk
+*.aab
+*.keystore
+.DS_Store
