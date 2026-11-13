@@ -1,0 +1,14 @@
+[
+  {
+    "relation": [
+      "delegate_permission/common.handle_all_urls"
+    ],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "kr.busanvr.app",
+      "sha256_cert_fingerprints": [
+        "26:84:08:4E:EA:3D:FB:D3:DE:8E:C2:92:58:B2:38:7C:62:80:E5:08:70:7D:EA:99:2C:13:45:1D:F5:82:1C:A5"
+      ]
+    }
+  }
+]

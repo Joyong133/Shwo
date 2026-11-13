@@ -6,6 +6,7 @@ public/xr-profiles/
 public/.well-known/
 android/
 *.apk
+!release/*.apk
 *.aab
 *.keystore
 .DS_Store

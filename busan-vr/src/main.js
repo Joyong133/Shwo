@@ -516,6 +516,11 @@ renderer.setAnimationLoop(() => {
     bus.update(dt, camPos);
     applyFog(bus.fog);
   }
+  // 화면 모드(휴대폰·PC)에서는 열린 패널이 시야를 따라다니게 한다 (VR에서는 공간에 고정)
+  if (!renderer.xr.isPresenting) {
+    if (spotPanel.visible) spotPanel.placeInFront(camera, { distance: 1.0 });
+    if (menuPanel.visible) menuPanel.placeInFront(camera, { distance: 0.85 });
+  }
   audio.update(dt);
   renderer.render(scene, camera);
 });

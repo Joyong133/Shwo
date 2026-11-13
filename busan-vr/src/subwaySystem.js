@@ -257,7 +257,7 @@ export class SubwaySystem {
     // ── 바깥 풍경 ──
     const env = new THREE.Group();
     group.add(env);
-    const tunnelSolid = solidMaterial();
+    const tunnelSolid = solidMaterial({ color: 0x5a5a5a }); // 터널은 실내조명을 덜 받도록 어둡게
     const tunnelGlow = glowMaterial({ fog: true });
     const tunnel = new Scroller({
       length: 12, count: 11, behind: 30,

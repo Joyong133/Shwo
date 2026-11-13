@@ -13,7 +13,8 @@
     "preview": "vite preview --host",
     "apk:key": "node scripts/build-apk.mjs key",
     "apk": "node scripts/build-apk.mjs build",
-    "apk:install": "adb install -r busan-vr.apk"
+    "apk:install": "adb install -r busan-vr.apk",
+    "build:pages": "node scripts/prepare-assets.mjs && vite build --outDir ../busan --emptyOutDir"
   },
   "dependencies": {
     "three": "0.170.0"

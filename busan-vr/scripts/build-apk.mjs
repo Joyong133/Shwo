@@ -7,7 +7,9 @@
 //   node scripts/build-apk.mjs build --url=https://<배포주소>/   # busan-vr.apk 생성
 // 옵션 / 환경변수
 //   --url / PWA_URL            배포된 PWA 주소 (https, 끝에 /)
-//   --mode / APP_MODE          immersive(기본: 실행 즉시 VR 앱) | 2D (패널 앱, "VR 시작" 버튼으로 진입)
+//   --mode / APP_MODE          immersive(실행 즉시 VR) | 2D(패널로 열리고 "VR로 시작" 버튼으로 진입) | auto(기본)
+//                              auto: 도메인 루트의 assetlinks.json 검증이 통과하면 immersive, 아니면 2D
+//   --out                      출력 파일 이름 (기본 busan-vr.apk)
 //   --package / APP_PACKAGE    안드로이드 패키지 ID (기본 kr.busanvr.app)
 //   --version / APP_VERSION    버전 이름 (기본 package.json version), --code / APP_VERSION_CODE 버전 코드
 //   BUBBLEWRAP_KEYSTORE_PASSWORD, BUBBLEWRAP_KEY_PASSWORD   키스토어 비밀번호 (기본 busanvr1234)
@@ -33,7 +35,8 @@ const args = Object.fromEntries(
 const command = process.argv[2] || 'build';
 const pkgJson = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
 const PACKAGE_ID = args.package || process.env.APP_PACKAGE || 'kr.busanvr.app';
-const APP_MODE = args.mode || process.env.APP_MODE || 'immersive';
+let APP_MODE = args.mode || process.env.APP_MODE || 'auto';
+const OUT_NAME = args.out || 'busan-vr.apk';
 const APP_VERSION = args.version || process.env.APP_VERSION || pkgJson.version;
 const APP_VERSION_CODE = Number(args.code || process.env.APP_VERSION_CODE || 1);
 const KS_PASS = process.env.BUBBLEWRAP_KEYSTORE_PASSWORD || 'busanvr1234';
@@ -169,7 +172,9 @@ async function checkDeployment(url, fingerprint) {
     log('  ⚠ 배포된 assetlinks.json 의 지문이 현재 키스토어와 다릅니다. `npm run build` 후 다시 배포하세요.');
   } else {
     log('  배포 확인: manifest.json / assetlinks.json 정상');
+    return true;
   }
+  return false;
 }
 
 // ───────────── 4) twa-manifest.json → Android 프로젝트 → 서명 APK ─────────────
@@ -185,12 +190,16 @@ async function buildApk(fingerprint) {
     fail(`주소 형식이 올바르지 않습니다: ${rawUrl}`);
   }
   if (url.protocol !== 'https:') fail('PWA 주소는 반드시 https:// 여야 합니다 (WebXR 요구사항).');
-  if (!['immersive', '2D'].includes(APP_MODE)) fail('--mode 는 immersive 또는 2D 여야 합니다.');
+  if (!['immersive', '2D', 'auto'].includes(APP_MODE)) fail('--mode 는 immersive, 2D, auto 중 하나여야 합니다.');
   const iconFile = path.join(root, 'dist', 'icons', 'icon-512.png');
   if (!fs.existsSync(iconFile) || !fs.existsSync(path.join(root, 'dist', 'manifest.json'))) {
     fail('dist/ 가 없습니다. 먼저 `npm run build` 를 실행하세요.');
   }
-  await checkDeployment(url, fingerprint);
+  const verified = await checkDeployment(url, fingerprint);
+  if (APP_MODE === 'auto') {
+    APP_MODE = verified ? 'immersive' : '2D';
+    log(`실행 모드 자동 선택: ${APP_MODE}${verified ? '' : ' (도메인 검증 파일이 없어 패널 실행 모드로 빌드합니다. 실행 후 "VR로 시작"을 누르세요)'}`);
+  }
 
   const server = await serveDist();
   const port = server.address().port;
@@ -252,13 +261,14 @@ async function buildApk(fingerprint) {
 
   const signed = path.join(androidDir, 'app-release-signed.apk');
   if (!fs.existsSync(signed)) fail('app-release-signed.apk 가 생성되지 않았습니다. 위 로그를 확인하세요.');
-  const out = path.join(root, 'busan-vr.apk');
+  const out = path.join(root, OUT_NAME);
   fs.copyFileSync(signed, out);
   const mb = (fs.statSync(out).size / 1024 / 1024).toFixed(2);
   log(`\x1b[32m완료!\x1b[0m ${path.relative(process.cwd(), out) || 'busan-vr.apk'} (${mb} MB)`);
   log(`  PWA 주소 : ${url}`);
   log(`  검증 파일: ${new URL('/.well-known/assetlinks.json', url)}  ← 반드시 이 주소에서 열려야 합니다`);
-  log('  설치     : adb install -r busan-vr.apk   (또는 npm run apk:install)');
+  log(`  실행 모드: ${APP_MODE === 'immersive' ? 'immersive (실행 즉시 VR)' : '2D (패널로 열림 → "VR로 시작")'}`);
+  log(`  설치     : adb install -r ${OUT_NAME}`);
 }
 
 try {

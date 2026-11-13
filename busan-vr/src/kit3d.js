@@ -697,7 +697,7 @@ export function addLighthouse(b, glow, x, y, z, h = 14, body = 0xf5f5f5, cap = 0
  * Batch.setTransform 으로 위치/방향/크기를 정해 놓고 호출한다.
  */
 export function addSuspensionBridge(b, glow, o = {}) {
-  const { length = 900, span = 420, towerH = 78, deckY = 28, deckW = 18, color = 0xdfe5ec, cable = 0xf4f7fb, lights = false, lightColor = 0x7fd6ff, hangerStep = 14 } = o;
+  const { length = 900, span = 420, towerH = 78, deckY = 28, deckW = 18, color = 0xdfe5ec, cable = 0xf4f7fb, lights = false, lightColor = 0x7fd6ff, hangerStep = 14, lightSize = 1.3 } = o;
   const L = length / 2;
   const S = span / 2;
   const top = deckY + towerH;
@@ -740,7 +740,7 @@ export function addSuspensionBridge(b, glow, o = {}) {
       const x1 = -L + (length * i) / N;
       const x2 = -L + (length * (i + 1)) / N;
       b.beam(x1, cableY(x1), cz, x2, cableY(x2), cz, 0.75, cable);
-      if (lights && glow) glow.box(1.3, 1.3, 1.3, x1, cableY(x1) + 0.3, cz, lightColor);
+      if (lights && glow) glow.box(lightSize, lightSize, lightSize, x1, cableY(x1) + 0.3, cz, lightColor);
     }
     for (let x = -L + hangerStep; x < L; x += hangerStep) {
       if (Math.abs(Math.abs(x) - S) < 4) continue;

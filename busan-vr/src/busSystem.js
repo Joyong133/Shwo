@@ -242,7 +242,7 @@ export class BusSystem {
       const bg = new Batch();
       bb.setTransform(RC, SEA_Y - 0.3, 0, Math.PI / 2, 1);
       bg.setTransform(RC, SEA_Y - 0.3, 0, Math.PI / 2, 1);
-      addSuspensionBridge(bb, bg, { length: BRIDGE_LEN, span: 200, towerH: 56, deckY: -SEA_Y, deckW: 18, lights: true, hangerStep: 10 });
+      addSuspensionBridge(bb, bg, { length: BRIDGE_LEN, span: 200, towerH: 56, deckY: -SEA_Y, deckW: 18, lights: true, hangerStep: 10, lightSize: 0.5 });
       bridge.add(bb.build(mat.solid), bg.build(mat.glow));
     }
     bridge.visible = false;
