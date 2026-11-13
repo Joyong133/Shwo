@@ -5,7 +5,7 @@ import {
 } from './busanData.js';
 import {
   Batch, solidMaterial, glowMaterial, facadeMaterial, makeSea, makeSky, makeStars, makeClouds, makeLights, makeLabelSprite,
-  makeSign, mulberry32, skyPreset, disposeTree, addHanok, addPagoda, addLighthouse, addBoat,
+  makeSign, mulberry32, skyPreset, disposeTree, addHanok, addPagoda, addLighthouse, addBoat, setPersonAvoid,
 } from './kit3d.js';
 import { SPOT_BUILDERS } from './spots/index.js';
 
@@ -528,7 +528,8 @@ export class SceneCtx {
     this.glow = new Batch(); // 스스로 빛나는 것 (조명·네온)
     this.anims = [];
     this.teleport = [];
-    this.spawn = { x: 0, z: 0, yaw: 0 };
+    this._spawn = { x: 0, z: 0, yaw: 0 };
+    this.light = null; // 조명 오버라이드 {hemi:[sky,ground,세기], dir:[색,세기]} (예: 야구장 조명탑)
     this.rand = mulberry32(hashId(spot.id));
     this.fogRange = [90, 1100];
     this.bounds = 12; // PC/모바일 걷기 반경
@@ -538,6 +539,16 @@ export class SceneCtx {
   /** 장면 효과음 (불꽃 등). 오디오 엔진의 같은 이름 메서드를 호출한다. */
   sfx(name) {
     this.hooks.sfx?.(name);
+  }
+
+  /** 시작 위치. 지정하면 그 주변 3m 에는 사람 소품을 놓지 않는다. */
+  get spawn() {
+    return this._spawn;
+  }
+
+  set spawn(v) {
+    this._spawn = v;
+    setPersonAvoid({ x: v.x, z: v.z, r: 3.2 });
   }
 
   add(obj) {
@@ -600,7 +611,7 @@ export class SceneCtx {
       g.add(this.stars);
     }
     if (this.preset.clouds) g.add(makeClouds(this.preset.clouds, 14, hashId(this.spot.id) % 97));
-    g.add(makeLights(this.skyName));
+    g.add(makeLights(this.skyName, this.light));
   }
 }
 
@@ -611,7 +622,12 @@ export class SceneCtx {
 export function buildSpotScene(spot) {
   const ctx = new SceneCtx(spot);
   const builder = SPOT_BUILDERS[spot.id] || SPOT_BUILDERS.__default;
-  builder(ctx);
+  setPersonAvoid({ x: 0, z: 0, r: 3.2 });
+  try {
+    builder(ctx);
+  } finally {
+    setPersonAvoid(null);
+  }
   ctx.finish();
   const group = ctx.group;
   group.name = `spot-${spot.id}`;

@@ -260,17 +260,17 @@ export const SKY_PRESETS = {
   },
   sunset: {
     top: 0x3b4f9c, horizon: 0xff9a55, bottom: 0xc76a4a, sunDir: v3(0.0, 0.07, -1.0), sunColor: 0xffc27a, sunSize: 4.2, glow: 1.0,
-    fog: 0xf0a078, hemi: [0xffc9a0, 0x6a5a66, 1.05], dir: [0xffb074, 1.9],
+    fog: 0xf0a078, hemi: [0xffd2b0, 0x7a6a72, 1.45], dir: [0xffb074, 1.9],
     seaDeep: 0x2a3f78, seaShallow: 0xd9825a, clouds: 0xffc7a8, stars: false, night: false,
   },
   dusk: {
     top: 0x1b2a6b, horizon: 0xf2a0a6, bottom: 0x70578c, sunDir: v3(-0.5, 0.03, -0.86), sunColor: 0xffb7a0, sunSize: 3.2, glow: 0.7,
-    fog: 0xa98bb0, hemi: [0xc9b8ee, 0x54506a, 0.95], dir: [0xffc0a8, 1.1],
+    fog: 0xa98bb0, hemi: [0xd4c6f2, 0x6a6480, 1.35], dir: [0xffc0a8, 1.2],
     seaDeep: 0x1c2c62, seaShallow: 0x9a7aa8, clouds: 0xe9b0c0, stars: true, night: false,
   },
   night: {
     top: 0x040818, horizon: 0x1a2a55, bottom: 0x0a1028, sunDir: v3(-0.4, 0.55, -0.6), sunColor: 0xcfe0ff, sunSize: 1.7, glow: 0.18,
-    fog: 0x0e1a38, hemi: [0x5870b8, 0x1a1c2c, 0.75], dir: [0x9fb6ff, 0.55],
+    fog: 0x0e1a38, hemi: [0x6a82c8, 0x24283c, 1.0], dir: [0x9fb6ff, 0.6],
     seaDeep: 0x030a1c, seaShallow: 0x16305c, clouds: null, stars: true, night: true,
   },
   hub: {
@@ -362,7 +362,7 @@ export function makeClouds(color = 0xffffff, count = 14, seed = 5) {
     const y = 190 + rand() * 160;
     const w = 60 + rand() * 90;
     for (let k = 0; k < 4; k++) {
-      b.sphere(1, x + (rand() - 0.5) * w * 1.6, y + (rand() - 0.5) * 12, z + (rand() - 0.5) * w * 1.6, color, w * (0.5 + rand() * 0.5), 14 + rand() * 12, w * (0.4 + rand() * 0.4), 8, 5);
+      b.sphere(1, x + (rand() - 0.5) * w * 1.6, y + (rand() - 0.5) * 12, z + (rand() - 0.5) * w * 1.6, color, w * (0.5 + rand() * 0.5), 14 + rand() * 12, w * (0.4 + rand() * 0.4), 14, 9);
     }
   }
   const mesh = b.build(new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.78, fog: false, depthWrite: false }));
@@ -371,8 +371,8 @@ export function makeClouds(color = 0xffffff, count = 14, seed = 5) {
 }
 
 /** 프리셋에 맞는 조명 세트 */
-export function makeLights(name) {
-  const p = skyPreset(name);
+export function makeLights(name, override = null) {
+  const p = { ...skyPreset(name), ...(override || {}) };
   const g = new THREE.Group();
   g.add(new THREE.HemisphereLight(p.hemi[0], p.hemi[1], p.hemi[2]));
   const sun = new THREE.DirectionalLight(p.dir[0], p.dir[1]);
@@ -447,6 +447,10 @@ export function makeSea(name, opts = {}) {
   });
   const geo = new THREE.PlaneGeometry(size, size, segments, segments);
   geo.rotateX(-Math.PI / 2);
+  // 격자를 반 칸쯤 어긋나게 둔다: 관람자 바로 아래(카메라 평면 위)에 정점 줄이 정확히 놓이면
+  // 일부 렌더러에서 w=0 클리핑 오류로 수면이 화면을 덮는 현상이 생긴다.
+  const cell = size / segments;
+  geo.translate(cell * 0.37, 0, cell * 0.43);
   const mesh = new THREE.Mesh(geo, mat);
   mesh.position.y = y;
   mesh.frustumCulled = false;
@@ -582,7 +586,14 @@ export function addPalm(b, x, y, z, h = 6) {
   }
 }
 
+let _avoid = null;
+/** 사람 소품을 놓지 않을 구역 지정 (관람자 바로 앞에 사람이 서지 않도록). null 이면 해제 */
+export function setPersonAvoid(zone) {
+  _avoid = zone;
+}
+
 export function addPerson(b, x, y, z, h = 1.7, color = 0x3b4a6b, skin = 0xe8c4a0) {
+  if (_avoid && Math.abs(y) < 2.5 && Math.hypot(x - _avoid.x, z - _avoid.z) < _avoid.r) return;
   b.cyl(h * 0.09, h * 0.11, h * 0.48, x, y, z, 0x2a2f3a, 6);
   b.cyl(h * 0.11, h * 0.1, h * 0.34, x, y + h * 0.48, z, color, 6);
   b.sphere(h * 0.075, x, y + h * 0.91, z, skin, 1, 1.1, 1, 8, 6);

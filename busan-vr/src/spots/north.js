@@ -1,7 +1,7 @@
 // 도심·북부산권: 서면 / 사직야구장 / 범어사·금정산성
 import * as THREE from 'three';
 import {
-  Batch, solidMaterial, glowMaterial, addPine, addTree, addPerson, addLamp, addHanok, addPagoda, addStoneLantern,
+  Batch, solidMaterial, glowMaterial, addPine, addTree, addPerson, addLamp, addHanok, addPagoda, addStoneLantern, addRailing,
 } from '../kit3d.js';
 import { addLanternString } from './common.js';
 
@@ -138,11 +138,12 @@ export function sajik(ctx) {
   ctx.spawn = { x: 0, z: 1.2, yaw: 0 };
   ctx.bounds = 8;
   ctx.fogRange = [300, 1400];
+  ctx.light = { hemi: [0xffffff, 0x5a6878, 1.75], dir: [0xfff8e8, 1.5] }; // 조명탑이 켜진 야간 경기
   const F = -6; // 그라운드 높이
   const HOME = { x: 0, z: -15 };
   ctx.plane(26, 5.5, 0, 0, 1, 0x4a4f57, true); // 내 좌석 단
   s.box(26, 6, 5.5, 0, F, 1, 0x5a6068);
-  s.box(26, 1.1, 0.15, 0, 0, -1.7, 0x2f6fd0);
+  addRailing(s, -13, -1.7, 13, -1.7, 0, 0.95, 0x2f6fd0, 2.6);
   // 잔디 · 내야 흙 · 베이스 · 파울라인
   ctx.disc(128, 0x3f8f45, F, 0, -88, false);
   for (let i = 0; i < 9; i++) s.add(new THREE.RingGeometry(20 + i * 11, 25.5 + i * 11, 48, 1, Math.PI * 0.25, Math.PI * 0.5), 0x4a9a50, HOME.x, F + 0.02, HOME.z, -Math.PI / 2);
@@ -286,12 +287,15 @@ export function beomeosa(ctx) {
   addLanternString(ctx, -14, 3.4, -16, -14, 3.4, 12, 14);
   addLanternString(ctx, 12, 3.4, -18, 12, 3.4, 4, 12);
   // 금정산 능선 · 금정산성 성곽 · 북문
-  const ridge = [[-300, -260, 260, 150], [-60, -330, 300, 190], [240, -280, 260, 160], [-460, -120, 240, 120], [430, -100, 240, 130], [0, -520, 500, 230]];
+  const ridge = [[-300, -300, 250, 150], [-20, -470, 300, 200], [290, -330, 250, 160], [-470, -110, 230, 120], [450, -90, 230, 130], [60, -820, 460, 250]];
   for (const [x, z, rad, h] of ridge) s.dome(rad, h, x, -4, z, [0x4a7f50, 0x55895a, 0x3f7346][Math.floor(r() * 3)]);
+  const ridgeY = (x, z) => Math.max(0, ...ridge.map(([cx, cz, rad, h]) => h * Math.sqrt(Math.max(0, 1 - ((x - cx) ** 2 + (z - cz) ** 2) / (rad * rad))))) - 5;
   const wallPts = [];
   for (let i = 0; i <= 26; i++) {
     const u = i / 26;
-    wallPts.push([-330 + u * 380, 96 + Math.sin(u * 3.1) * 46 + u * 26, -205 - Math.sin(u * 2.2) * 50]);
+    const wx = -440 + u * 520;
+    const wz = -170 - Math.sin(u * Math.PI) * 60 - u * 110;
+    wallPts.push([wx, ridgeY(wx, wz) + 1.5, wz]);
   }
   for (let i = 0; i < 26; i++) {
     const [x1, y1, z1] = wallPts[i];

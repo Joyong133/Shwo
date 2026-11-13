@@ -8,16 +8,16 @@ export function dadaepo(ctx) {
   ctx.spawn = { x: 0, z: 0, yaw: 0 };
   ctx.bounds = 30;
   ctx.fogRange = [250, 2400];
-  ctx.plane(1400, 190, 0, 0, -10, 0xb39678, true); // 넓은 갯벌 모래 (z -105 ~ 85)
+  ctx.plane(1400, 190, 0, 0, -10, 0x9a8470, true); // 넓은 갯벌 모래 (z -105 ~ 85)
   ctx.sea({ y: -0.2, amp: 0.12 });
   // 물이 얇게 고인 갯벌: 노을이 비친다
-  const film = new THREE.MeshBasicMaterial({ color: 0xffb070, transparent: true, opacity: 0.32, depthWrite: false });
-  for (let i = 0; i < 26; i++) {
+  const film = new THREE.MeshBasicMaterial({ color: 0xffc8a0, transparent: true, opacity: 0.16, depthWrite: false });
+  for (let i = 0; i < 34; i++) {
     const geo = new THREE.CircleGeometry(1, 20);
     geo.rotateX(-Math.PI / 2);
     const m = new THREE.Mesh(geo, film);
-    m.position.set(-260 + r() * 520, 0.012 + i * 0.0004, -95 + r() * 110);
-    m.scale.set(14 + r() * 40, 1, 3 + r() * 8);
+    m.position.set(-260 + r() * 520, 0.015 + i * 0.0006, -98 + r() * 90);
+    m.scale.set(8 + r() * 26, 1, 2 + r() * 5);
     ctx.add(m);
   }
   const foam = ctx.plane(1400, 1.6, 0, 0.02, -104, 0xffe6cf);
@@ -148,8 +148,8 @@ export function eulsukdo(ctx) {
     const x = side * (2.4 + r() ** 1.7 * 90);
     const z = -110 + r() * 150;
     const h = 1.5 + r() * 1.3;
-    s.cone(0.09 + r() * 0.06, h, x, -0.9, z, reed[i % 4], 4);
-    if (i % 2 === 0) s.sphere(0.11, x + 0.05, h - 0.95, z, 0xf2e2b8, 1, 2.4, 1, 6, 4);
+    s.cone(0.05 + r() * 0.04, h, x, -0.9, z, reed[i % 4], 4);
+    if (i % 2 === 0) s.sphere(0.055, x + 0.03, h - 0.98, z, 0xf2e2b8, 1, 2.6, 1, 6, 4);
   }
   // 탐조대
   for (const sx of [-1, 1]) for (const sz of [-1, 1]) s.cyl(0.12, 0.12, 2.6, 7 + sx * 1.6, -0.9, -40 + sz * 1.6, 0x5a4630, 6);
@@ -158,7 +158,9 @@ export function eulsukdo(ctx) {
   s.box(4.3, 0.5, 0.1, 7, 2.9, -42.1, 0x1c1c1c);
   s.hip(5.4, 1.4, 5.4, 7, 4.0, -40, 0x4a3a2a, 0.15);
   s.beam(1.8, 0.1, -38, 5, 1.7, -40, 0.9, 0x7a5a3c);
-  ctx.sign('을숙도 철새도래지', 2.6, 2.2, 1.5, 2, -Math.PI / 2 + 0.5, { w: 640, h: 150, size: 70, bg: '#14532d', fg: '#ffffff', radius: 14 });
+  s.box(0.12, 1.9, 0.12, 1.95, 0, 2.6, 0x5a4630);
+  s.box(0.12, 1.9, 0.12, 1.95, 0, 0.6, 0x5a4630);
+  ctx.sign('을숙도 철새도래지', 2.4, 1.85, 1.55, 1.6, -Math.PI / 2, { w: 640, h: 150, size: 70, bg: '#14532d', fg: '#ffffff', radius: 14 });
   // 물새들: 백로 · 오리
   for (let i = 0; i < 9; i++) {
     const x = (r() > 0.5 ? 1 : -1) * (8 + r() * 40);

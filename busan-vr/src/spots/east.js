@@ -248,6 +248,6 @@ export function jukseong(ctx) {
   s.dome(260, 70, -120, -2, 300, 0x4f8a55);
   s.dome(220, 90, 220, -2, 340, 0x447f4a);
   for (let i = 0; i < 16; i++) addPine(s, -90 + r() * 180, 0, 28 + r() * 10, 6 + r() * 3, r);
-  for (let i = 0; i < 4; i++) addPerson(s, -6 + r() * 8, 0, 4.5 + r() * 4, 1.6, [0x8a3b4a, 0x3b4a6b, 0xd9a03b, 0xffffff][i]);
+  for (let i = 0; i < 4; i++) addPerson(s, 1 + r() * 9, 0, -1.5 + r() * 4, 1.6, [0x8a3b4a, 0x3b4a6b, 0xd9a03b, 0xffffff][i]);
   addBirds(ctx, { count: 8, cx: -6, cy: 13, cz: -30, radius: 28, speed: 0.3 });
 }

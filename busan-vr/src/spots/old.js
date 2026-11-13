@@ -248,7 +248,7 @@ export function tower(ctx) {
     addRailing(s, Math.cos(a) * 26.6, Math.sin(a) * 26.6 * -1, Math.cos(a2) * 26.6, Math.sin(a2) * 26.6 * -1, 0, 1.1, 0xe6e9ec, 3);
   }
   for (let i = 0; i < 10; i++) addPerson(s, -14 + r() * 28, 0, -14 + r() * 26, 1.5 + r() * 0.3, [0x8a3b4a, 0x3b4a6b, 0xd9a03b, 0x4a6b3b, 0x555c66][i % 5]);
-  for (let i = 0; i < 12; i++) s.sphere(0.13, -3 + r() * 6, 0.1, 2 + r() * 5, 0x8d949c, 1, 0.8, 1.4);
+  for (let i = 0; i < 12; i++) s.sphere(0.07, -4 + r() * 8, 0.06, -2 + r() * 6, 0x8d949c, 1, 0.9, 1.5);
   // 발아래 원도심 · 부산항 · 영도
   ctx.plane(1900, 1000, 0, LOW, -40, 0x8c9198);
   for (let i = 0; i < 190; i++) {
@@ -256,7 +256,7 @@ export function tower(ctx) {
     const z = -520 + r() * 640;
     if (Math.hypot(x, z) < 105) continue;
     const near = Math.hypot(x, z) < 260;
-    b.building(14 + r() * 20, 10 + r() ** 2 * (near ? 60 : 130), 14 + r() * 16, x, LOW, z, [0xe8e4da, 0xd9dfe6, 0xcfd6c9, 0xf0e6d6, 0xc7d3e0][i % 5], r() > 0.5 ? 0 : Math.PI / 2);
+    b.building(14 + r() * 20, 10 + r() ** 2 * (near ? 45 : 85), 14 + r() * 16, x, LOW, z, [0xe8e4da, 0xd9dfe6, 0xcfd6c9, 0xf0e6d6, 0xc7d3e0][i % 5], r() > 0.5 ? 0 : Math.PI / 2);
   }
   ctx.sea({ y: LOW - 1.5, amp: 0.3 });
   for (let i = 0; i < 8; i++) {
@@ -296,7 +296,8 @@ export function taejongdae(ctx) {
   s.cyl(11.5, 17, 62, 0, SEA, 0, 0x8a8478, 14);
   for (let i = 0; i < 60; i++) {
     const x = -120 + r() * 240;
-    s.rock(6 + r() * 9, x, SEA + r() * 56, 2 - r() * 14 - Math.abs(x) * 0.04, [0x7a7468, 0x6a655c, 0x8a8478, 0x9a9486][i % 4], 1, 1.4, 0.8, r() * 3);
+    const rad = 6 + r() * 9;
+    s.rock(rad, x, Math.min(SEA + r() * 56, -3 - rad * 1.4), 2 - r() * 14 - Math.abs(x) * 0.04, [0x7a7468, 0x6a655c, 0x8a8478, 0x9a9486][i % 4], 1, 1.4, 0.8, r() * 3);
   }
   for (let i = 0; i < 26; i++) s.rock(4 + r() * 6, -110 + r() * 220, SEA + 1, -14 - r() * 30, 0x5f5a52, 1, 0.5, 1, r() * 3);
   // 영도등대 (왼쪽 아래) · 신선바위 · 망부석
@@ -369,8 +370,8 @@ export function huinnyeoul(ctx) {
   s.box(0.35, 1.0, 86, -1.85, 0, -12, 0xfaf8f2);
   s.box(0.38, 0.14, 86, -1.85, 1.0, -12, 0x3b8ad0);
   // 절벽 · 절영해안산책로
-  s.box(40, 30, 100, -22, SEA - 1, -12, 0x7a7468);
-  for (let i = 0; i < 40; i++) s.rock(3 + r() * 5, -3 - r() * 10, SEA + 3 + r() * 24, -60 + r() * 96, [0x7a7468, 0x6a655c, 0x8a8478][i % 3], 1, 1.3, 1, r() * 3);
+  s.box(40, 26, 100, -22, SEA - 1, -12, 0x7a7468);
+  for (let i = 0; i < 40; i++) s.rock(3 + r() * 5, -6 - r() * 10, SEA + 3 + r() * 15, -60 + r() * 96, [0x7a7468, 0x6a655c, 0x8a8478][i % 3], 1, 1.3, 1, r() * 3);
   s.box(4, 0.6, 110, -15, SEA + 2.6, -12, 0x4f9ad0);
   for (let z = -64; z < 42; z += 6) s.box(4.1, 0.62, 2, -15, SEA + 2.61, z, [0xff5a4a, 0xffd23f, 0x3fb86a, 0x4f9ad0][Math.floor((z + 64) / 6) % 4]);
   for (let i = 0; i < 28; i++) s.rock(2 + r() * 4, -19 - r() * 12, SEA + 0.5, -62 + r() * 100, 0x5f5a52, 1, 0.6, 1, r() * 3);
