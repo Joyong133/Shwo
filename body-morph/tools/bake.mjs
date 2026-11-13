@@ -11,6 +11,9 @@
 // Three further sparse deltas reach past the female average (bust up to an H cup, a narrower waist,
 // fuller hips) for the app's "individual variation" sliders.
 //
+// Hair is a second mesh, meshed on the long wavy style and carried back to the short one, so the
+// waves keep their resolution. It follows two weights: the skeleton (where the head is) and the style.
+//
 //   node tools/bake.mjs            (GRID=0.008 for a quick low-res bake)
 
 import fs from 'node:fs';
@@ -253,6 +256,7 @@ function smin(a, b, k) {
   const h = Math.max(k - Math.abs(a - b), 0) / k;
   return Math.min(a, b) - h * h * k * 0.25;
 }
+const smax = (a, b, k) => -smin(-a, -b, k);
 
 // ───────────────────────────── the figure ─────────────────────────────
 function build(P) {
@@ -451,7 +455,8 @@ function grad(sdf, x, y, z) {
     (sdf(x, y, z + EPS) - sdf(x, y, z - EPS)) / (2 * EPS),
   ];
 }
-function project(sdf, p, iters = 14) {
+// free: the surface is not mirror-symmetric (hair), so a point may cross the mid-plane
+function project(sdf, p, iters = 14, free = false) {
   let [x, y, z] = p;
   const sgn = x < 0 ? -1 : 1;
   for (let it = 0; it < iters; it++) {
@@ -461,7 +466,7 @@ function project(sdf, p, iters = 14) {
     const g2 = g[0] * g[0] + g[1] * g[1] + g[2] * g[2] + 1e-9;
     const s = Math.max(-0.02, Math.min(0.02, d)) / g2;
     x -= g[0] * s; y -= g[1] * s; z -= g[2] * s;
-    if (x * sgn < 0) x = 0;
+    if (!free && x * sgn < 0) x = 0;
     if (y < 0) y = 0;
   }
   return [x, y, z];
@@ -609,17 +614,20 @@ if (NV > 65535) throw new Error('too many vertices for 16-bit indices; raise GRI
 
 // Puts the mesh on a figure: every vertex is carried over from the figure it currently sits on
 // (figFrom) and then dropped exactly onto the new surface.
-function shape(key, fig, sdf, from, figFrom) {
-  const pos = new Float32Array(NV * 3), nrm = new Float32Array(NV * 3), ao = new Float32Array(NV);
+function shape(key, fig, sdf, from, figFrom, iters, free) {
+  const nv = from.length / 3;
+  const pos = new Float32Array(nv * 3), nrm = new Float32Array(nv * 3), ao = new Float32Array(nv);
   let maxRes = 0;
-  for (let i = 0; i < NV; i++) {
+  for (let i = 0; i < nv; i++) {
     const p0 = [from[i * 3], from[i * 3 + 1], from[i * 3 + 2]];
-    const p = project(sdf, figFrom ? carry(figFrom, fig, p0) : p0, figFrom ? 14 : 7);
+    const p = project(sdf, figFrom ? carry(figFrom, fig, p0) : p0, iters || (figFrom ? 14 : 7), free);
     maxRes = Math.max(maxRes, Math.abs(sdf(p[0], p[1], p[2])));
     const n = V.norm(grad(sdf, p[0], p[1], p[2]));
     pos.set(p, i * 3); nrm.set(n, i * 3); ao[i] = ambient(sdf, p, n);
   }
-  log(`shape ${key}: max residual ${(maxRes * 1000).toFixed(3)} mm`);
+  let off = 0;
+  for (let i = 0; i < nv; i++) if (Math.abs(sdf(pos[i * 3], pos[i * 3 + 1], pos[i * 3 + 2])) > 0.0005) off++;
+  log(`shape ${key}: max residual ${(maxRes * 1000).toFixed(3)} mm` + (off ? `, ${off} vertices more than 0.5 mm off` : ''));
   return { pos, nrm, ao };
 }
 const base = shape('base', corners.base, sdfs.base, mesh.pos, null);
@@ -699,6 +707,76 @@ const bands = {
 let topVert = 0;
 for (let i = 0; i < NV; i++) if (base.pos[i * 3 + 1] > base.pos[topVert * 3 + 1]) topVert = i;
 
+// ───────────────────────────── hair ─────────────────────────────
+// style 0: an ordinary short cut.  style 1: longer than shoulder length, permed.
+// The same four parts make both; in the short style the hanging parts shrink away inside the cap.
+function buildHair(P, st) {
+  const H = P.H, hs = P.headH / 0.232, W = P.headW, Dp = P.headD, ySh = P.fSh * H;
+  const mix = (a, b) => a + (b - a) * st, mix3 = (a, b) => [mix(a[0], b[0]), mix(a[1], b[1]), mix(a[2], b[2])];
+  const L = [];
+  L.push(ell('cap', [0, H - 0.097 * hs, -0.004 - mix(0.001, 0.007)],
+    [W + mix(0.009, 0.023), 0.098 * hs + mix(0.015, 0.024), Dp + mix(0.011, 0.025)], 0.02));
+  L.push(ell('fringe', [0, H - 0.040 * hs, Dp * mix(0.72, 0.45)], [W * mix(0.78, 0.70), mix(0.024, 0.018), mix(0.032, 0.024)], 0.012));
+  const rx = [mix(0.050, 0.080), mix(0.050, 0.098), mix(0.046, 0.118), mix(0.040, 0.104)];
+  const rz = [mix(0.030, 0.050), mix(0.030, 0.046), mix(0.028, 0.036), mix(0.024, 0.030)];
+  L.push(loft('back', [0, H - 0.110 * hs, -0.045], mix3([0, H - 0.150 * hs, -0.052], [0, ySh - 0.100, -0.086]),
+    [0, 0.35, 0.70, 1].map((v, i) => [v, rx[i], rz[i], 0, 0]), 0.025, { cap1: mix(0.020, 0.030) }));
+  L.push(cap('lock', mix3([W * 0.6, H - 0.100 * hs, 0], [W + 0.004, H - 0.105 * hs, 0.012]),
+    mix3([W * 0.6, H - 0.130 * hs, 0], [0.092, ySh - 0.075, 0.050]), mix(0.020, 0.034), mix(0.020, 0.030), 0.02));
+  // hairline, as depth below the crown: forehead, above or over the ear, nape
+  // (the forehead line is highest in the middle and comes down toward the temples by `arch`)
+  return { prims: L, st, H, hs, W, cut: { f: mix(0.056, 0.044), arch: mix(0.020, 0.040), e: mix(0.100, 0.175), b: mix(0.185, 0.200) } };
+}
+function makeHairSdf(fig) {
+  const [capP, fringe, back, lock] = fig.prims, { f, arch, e, b } = fig.cut, H = fig.H, hs = fig.hs, W = fig.W, st = fig.st;
+  const ss = (a, c, x) => { const t = Math.max(0, Math.min(1, (x - a) / (c - a))); return t * t * (3 - 2 * t); };
+  const TAU = Math.PI * 2;
+  return function sdf(x, y, z) {
+    const ax = x < 0 ? -x : x, th = Math.atan2(x, -z), below = H - y;
+    let d = evalPrim(capP, ax, y, z);
+    // hairline: an arch over the forehead, then round the ear to the nape, with a slightly uneven edge
+    const u = Math.min(1, ax / W), front = f + arch * u * u;
+    const edge = (Math.sin(26 * th + 1.7) * 0.0030 + Math.sin(41 * th) * 0.0014) * (1 - 0.4 * st);
+    const yCut = H - hs * (front + (e - front) * ss(0.065, 0.010, z) + (b - e) * ss(-0.015, -0.075, z)) + edge;
+    d = smax(d, (yCut - y) * 0.9, 0.007);
+    d = smin(d, evalPrim(fringe, ax, y, z), 0.012);
+    d = smin(d, evalPrim(back, ax, y, z), 0.025);
+    d = smin(d, evalPrim(lock, ax, y, z), 0.02);
+    // strands: fine, combed from the crown when short; wavy locks that grow stronger away from the crown when permed
+    const pm = ss(0.05 * hs, 0.15 * hs, below);
+    const fine = (Math.sin(34 * th + 5 * Math.sin(18 * y)) * 0.0008 + Math.sin(57 * th - 31 * y + 2 * Math.sin(9 * th)) * 0.0005) * ss(0.010, 0.045, below);
+    const perm = (Math.sin(21 * th + 1.5 * Math.sin(TAU * y / 0.055 + 2 * Math.sin(3 * th))) * 0.0038
+      + Math.sin(TAU * y / 0.043 + 6 * th + 1) * 0.0022) * pm;
+    const part = 0.0035 * Math.exp(-(x * x) / 0.00005) * ss(-0.055, -0.005, z) * (1 - ss(0.075, 0.115, below));   // centre parting
+    return d + fine * (1 - st * pm) + (perm + part) * st;
+  };
+}
+function orient(tris, sh) {
+  const nt = tris.length / 3;
+  let agree = 0;
+  for (let t = 0; t < nt; t++) {
+    const [a, b, c] = [tris[t * 3], tris[t * 3 + 1], tris[t * 3 + 2]];
+    const P = (q) => [sh.pos[q * 3], sh.pos[q * 3 + 1], sh.pos[q * 3 + 2]];
+    const fn = V.cross(V.sub(P(b), P(a)), V.sub(P(c), P(a)));
+    agree += V.dot(fn, [sh.nrm[a * 3], sh.nrm[a * 3 + 1], sh.nrm[a * 3 + 2]]) > 0 ? 1 : -1;
+  }
+  if (agree < 0) for (let t = 0; t < nt; t++) { const q = tris[t * 3 + 1]; tris[t * 3 + 1] = tris[t * 3 + 2]; tris[t * 3 + 2] = q; }
+}
+
+const HGRID = +process.env.HGRID || 0.0052;
+const PF = resolve(1, 0, 0), PM = resolve(0, 0, 0);       // hair only depends on the skeleton
+// corners: [skeleton, style]
+const hairFig = { fl: buildHair(PF, 1), ml: buildHair(PM, 1), fs: buildHair(PF, 0), ms: buildHair(PM, 0) };
+const hairSdf = Object.fromEntries(Object.entries(hairFig).map(([k, f]) => [k, makeHairSdf(f)]));
+const hxh = Math.ceil(0.22 / HGRID) * HGRID;
+const hairMesh = surfaceNets(hairSdf.fl, [-hxh, PF.fSh * PF.H - 0.17, -0.22], [hxh, PF.H + 0.06, 0.17], HGRID);
+const HNV = hairMesh.pos.length / 3, HNT = hairMesh.tris.length / 3;
+log(`hair grid ${hairMesh.dims.join('×')}  →  ${HNV} vertices, ${HNT} triangles`);
+if (HNV > 65535) throw new Error('too many hair vertices for 16-bit indices; raise HGRID');
+const hair = { fl: shape('hair fl', hairFig.fl, hairSdf.fl, hairMesh.pos, null, 40, true) };
+for (const k of ['ml', 'fs', 'ms']) hair[k] = shape('hair ' + k, hairFig[k], hairSdf[k], hair.fl.pos, hairFig.fl, 40, true);
+orient(hairMesh.tris, hair.fl);
+
 // ───────────────────────────── pack ─────────────────────────────
 const b64 = (ta) => Buffer.from(ta.buffer, ta.byteOffset, ta.byteLength).toString('base64');
 const bbMin = [1e9, 1e9, 1e9], bbMax = [-1e9, -1e9, -1e9];
@@ -751,13 +829,34 @@ const extras = Object.keys(VARIANTS).map((k) => {
   return { key: k, n, idx: b64(new Uint16Array(idx)), posScale: mx, pos: b64(qp), nrmScale: mn, nrm: b64(q8(nr, 127 / mn)), ao: b64(q8(a, 127)) };
 });
 
+// hair: male head with the short style, then deltas for skeleton (S), style (K) and both together (R)
+const hairPack = (() => {
+  const b0 = hair.ms, mn = [1e9, 1e9, 1e9], mx = [-1e9, -1e9, -1e9];
+  for (let i = 0; i < HNV * 3; i++) { mn[i % 3] = Math.min(mn[i % 3], b0.pos[i]); mx[i % 3] = Math.max(mx[i % 3], b0.pos[i]); }
+  const qp = new Uint16Array(HNV * 3);
+  for (let i = 0; i < HNV * 3; i++) qp[i] = Math.round((b0.pos[i] - mn[i % 3]) / (mx[i % 3] - mn[i % 3]) * 65535);
+  const sub = (a, b, f) => a[f].map((v, i) => v - b[f][i]);
+  const res = (f) => hair.fl[f].map((v, i) => v - hair.ml[f][i] - hair.fs[f][i] + b0[f][i]);
+  const defs = { S: (f) => sub(hair.fs, b0, f), K: (f) => sub(hair.ml, b0, f), R: res };
+  const targets = Object.keys(defs).map((k) => {
+    const dp = defs[k]('pos'), dn = defs[k]('nrm'), da = defs[k]('ao');
+    let m1 = 1e-9, m2 = 1e-9;
+    for (const v of dp) m1 = Math.max(m1, Math.abs(v));
+    for (const v of dn) m2 = Math.max(m2, Math.abs(v));
+    const q = new Int16Array(HNV * 3); for (let i = 0; i < HNV * 3; i++) q[i] = Math.round(dp[i] / m1 * 32767);
+    return { key: k, posScale: m1, pos: b64(q), nrmScale: m2, nrm: b64(q8(dn, 127 / m2)), ao: b64(q8(da, 127)) };
+  });
+  log('hair max vertex travel (mm): ' + targets.map((t) => `${t.key} ${(t.posScale * 1000).toFixed(1)}`).join('  '));
+  return { nv: HNV, nt: HNT, bbMin: mn, bbMax: mx, pos: b64(qp), nrm: b64(q8(b0.nrm, 127)), ao: b64(qu8(b0.ao)), idx: b64(new Uint16Array(hairMesh.tris)), targets };
+})();
+
 const round = (o) => JSON.parse(JSON.stringify(o, (k, v) => (typeof v === 'number' ? +v.toFixed(5) : v)));
 const data = {
   nv: NV, nt: NT, grid: GRID,
   bbMin, bbMax,
   pos: b64(qPos), nrm: b64(q8(base.nrm, 127)), ao: b64(qu8(base.ao)),
   idx: b64(new Uint16Array(mesh.tris)),
-  targets, extras,
+  targets, extras, hair: hairPack,
   metrics: round(metrics), cupTable: round(cupTable),
   lm: round({ male: corners.base.lm, female: corners.full.lm }),
   bands, topVert,

@@ -49,15 +49,37 @@
     }
     extras[t.key] = { n: t.n, idx: new Uint16Array(dec(t.idx).buffer), d: out };
   });
+  // hair: its own mesh; base is the male head with the short style, deltas are skeleton, style and both
+  var HD = D.hair, HNV = HD.nv, hbase = new Float32Array(HNV * STRIDE), hcur = new Float32Array(HNV * STRIDE);
+  var hindices = new Uint16Array(dec(HD.idx).buffer);
+  (function () {
+    var p = new Uint16Array(dec(HD.pos).buffer), n = new Int8Array(dec(HD.nrm).buffer), a = dec(HD.ao);
+    for (var i = 0; i < HNV; i++) {
+      for (var c = 0; c < 3; c++) {
+        hbase[i * STRIDE + c] = HD.bbMin[c] + p[i * 3 + c] / 65535 * (HD.bbMax[c] - HD.bbMin[c]);
+        hbase[i * STRIDE + 3 + c] = n[i * 3 + c] / 127;
+      }
+      hbase[i * STRIDE + 6] = a[i] / 255;
+    }
+  })();
+  var hdeltas = HD.targets.map(function (t) {
+    var p = new Int16Array(dec(t.pos).buffer), n = new Int8Array(dec(t.nrm).buffer), a = new Int8Array(dec(t.ao).buffer);
+    var out = new Float32Array(HNV * STRIDE), ps = t.posScale / 32767, ns = t.nrmScale / 127;
+    for (var i = 0; i < HNV; i++) {
+      for (var c = 0; c < 3; c++) { out[i * STRIDE + c] = p[i * 3 + c] * ps; out[i * STRIDE + 3 + c] = n[i * 3 + c] * ns; }
+      out[i * STRIDE + 6] = a[i] / 127;
+    }
+    return out;
+  });
   var basePos = new Float32Array(NV * 3);
   for (var i = 0; i < NV; i++) { basePos[i * 3] = base[i * STRIDE]; basePos[i * 3 + 1] = base[i * STRIDE + 1]; basePos[i * 3 + 2] = base[i * STRIDE + 2]; }
 
   // ───────────── state ─────────────
-  var w = { S: 0, F: 0, M: 0 };                    // 0 = male average, 1 = female average
+  var w = { S: 0, F: 0, M: 0, K: 0 };              // 0 = male average, 1 = female average; K is the hair style
   var ext = { B: 0, W: 0, H: 0 };                  // individual variation past the female average: bust, waist, hips
   var view = { yaw: -0.42, pitch: 0.10, zoom: 1, panY: 0 };
   var HOME = { yaw: -0.42, pitch: 0.10, zoom: 1, panY: 0 };
-  var ui = { guides: true, spin: false, playing: false, dir: 1, hold: 0, topic: null };
+  var ui = { guides: true, hair: true, spin: false, playing: false, dir: 1, hold: 0, topic: null };
   var dirtyShape = true, dirtyView = true, raf = 0, lastT = 0, insetTop = 0;
 
   var mean = function () { return (w.S + w.F + w.M) / 3; };
@@ -79,7 +101,7 @@
   }
 
   // ───────────── WebGL ─────────────
-  var gl = null, prog = null, floorProg = null, vbo = null, ibo = null, bbo = null, fbo = null;
+  var gl = null, prog = null, floorProg = null, vbo = null, ibo = null, bbo = null, fbo = null, hvbo = null, hibo = null;
   var VS = [
     'attribute vec3 aPos; attribute vec3 aNrm; attribute float aAo; attribute vec3 aBase;',
     'uniform mat4 uVP;',
@@ -89,12 +111,12 @@
   var FS = [
     'precision highp float;',
     'varying vec3 vP; varying vec3 vN; varying float vAo; varying vec3 vB;',
-    'uniform vec3 uEye, uKey, uFill, uBack, uRim, uTint;',
+    'uniform vec3 uEye, uKey, uFill, uBack, uRim, uTint, uAlbedo; uniform float uGloss;',
     'uniform vec3 uHiC[3]; uniform vec3 uHiR[3]; uniform float uHi;',
     'void main(){',
     '  vec3 n=normalize(vN), v=normalize(uEye-vP);',
     '  float ao=vAo;',
-    '  vec3 albedo=vec3(0.73,0.735,0.76);',
+    '  vec3 albedo=uAlbedo;',
     '  float m=0.0;',
     '  for(int i=0;i<3;i++){ vec3 q=(vB-uHiC[i])/uHiR[i]; m=max(m,1.0-smoothstep(0.50,1.0,length(q))); }',
     '  albedo=mix(albedo,uTint,m*uHi*0.82);',
@@ -105,7 +127,7 @@
     '  vec3 lit=amb+vec3(1.0,0.955,0.90)*kd*0.80+vec3(0.50,0.62,0.86)*fd*0.13;',
     '  vec3 col=albedo*lit;',
     '  vec3 hv=normalize(uKey+v);',
-    '  col+=vec3(1.0,0.97,0.93)*pow(max(dot(n,hv),0.0),30.0)*0.07*kd;',
+    '  col+=vec3(1.0,0.97,0.93)*pow(max(dot(n,hv),0.0),30.0)*uGloss*kd;',
     '  float fr=pow(1.0-max(dot(n,v),0.0),3.0);',
     '  col+=uRim*(fr*(0.10+0.50*bd)+bd*bd*0.16)*mix(0.35,1.0,ao);',
     '  gl_FragColor=vec4(pow(col,vec3(0.4545)),1.0);',
@@ -153,6 +175,8 @@
     vbo = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, vbo); gl.bufferData(gl.ARRAY_BUFFER, cur.byteLength, gl.DYNAMIC_DRAW);
     bbo = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, bbo); gl.bufferData(gl.ARRAY_BUFFER, basePos, gl.STATIC_DRAW);
     ibo = gl.createBuffer(); gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ibo); gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, indices, gl.STATIC_DRAW);
+    hvbo = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, hvbo); gl.bufferData(gl.ARRAY_BUFFER, hcur.byteLength, gl.DYNAMIC_DRAW);
+    hibo = gl.createBuffer(); gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, hibo); gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, hindices, gl.STATIC_DRAW);
     fbo = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, fbo);
     gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-0.8, -0.8, 0.8, -0.8, -0.8, 0.8, 0.8, 0.8]), gl.STATIC_DRAW);
     gl.clearColor(0, 0, 0, 0);
@@ -273,6 +297,12 @@
     gl.bindBuffer(gl.ARRAY_BUFFER, vbo); gl.bufferSubData(gl.ARRAY_BUFFER, 0, cur);
   }
 
+  function blendHair() {
+    var wS = w.S, wK = w.K, wR = wS * wK, dS = hdeltas[0], dK = hdeltas[1], dR = hdeltas[2];
+    for (var i = 0, n = HNV * STRIDE; i < n; i++) hcur[i] = hbase[i] + wS * dS[i] + wK * dK[i] + wR * dR[i];
+    gl.bindBuffer(gl.ARRAY_BUFFER, hvbo); gl.bufferSubData(gl.ARRAY_BUFFER, 0, hcur);
+  }
+
   function drawGL() {
     var W = glCanvas.width, H = glCanvas.height, m = mean();
     gl.viewport(0, 0, W, H);
@@ -313,7 +343,20 @@
     gl.uniform3f(u.uRim, lerp(A_COL[0], B_COL[0], m) / 255 * 0.9, lerp(A_COL[1], B_COL[1], m) / 255 * 0.9, lerp(A_COL[2], B_COL[2], m) / 255 * 0.9);
     gl.uniform3f(u.uTint, 1.0, 0.62, 0.20);
     gl.uniform3fv(u.uHiC, hiC); gl.uniform3fv(u.uHiR, hiR); gl.uniform1f(u.uHi, hiAmt);
+    gl.uniform3f(u.uAlbedo, 0.73, 0.735, 0.76); gl.uniform1f(u.uGloss, 0.07);
     gl.drawElements(gl.TRIANGLES, indices.length, gl.UNSIGNED_SHORT, 0);
+
+    // hair
+    if (ui.hair) {
+      gl.bindBuffer(gl.ARRAY_BUFFER, hvbo);
+      gl.vertexAttribPointer(aP, 3, gl.FLOAT, false, STRIDE * 4, 0);
+      gl.vertexAttribPointer(aN, 3, gl.FLOAT, false, STRIDE * 4, 12);
+      gl.vertexAttribPointer(aA, 1, gl.FLOAT, false, STRIDE * 4, 24);
+      gl.vertexAttribPointer(aB, 3, gl.FLOAT, false, STRIDE * 4, 0);
+      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, hibo);
+      gl.uniform3f(u.uAlbedo, 0.265, 0.205, 0.165); gl.uniform1f(u.uGloss, 0.16); gl.uniform1f(u.uHi, 0);
+      gl.drawElements(gl.TRIANGLES, hindices.length, gl.UNSIGNED_SHORT, 0);
+    }
     for (var a = 0; a < 4; a++) gl.disableVertexAttribArray(a);
   }
 
@@ -435,7 +478,7 @@
       var t = Math.abs(e.b - e.a) < 1e-9 ? 0 : (v - e.a) / (e.b - e.a);
       e.dot.style.left = Math.max(0, Math.min(1, t)) * 100 + '%';
     });
-    var st = $('state').lastElementChild, same = Math.abs(w.S - w.F) < 0.002 && Math.abs(w.S - w.M) < 0.002;
+    var st = $('state').lastElementChild, same = Math.abs(w.S - w.F) < 0.002 && Math.abs(w.S - w.M) < 0.002 && Math.abs(w.S - w.K) < 0.002;
     var varied = (ext.B > 0.005 || ext.W > 0.005 || ext.H > 0.005) && w.F > 0.002;
     st.textContent = !same ? '요인별 조합' : m < 0.002 ? '남성 평균' : m > 0.998 ? (varied ? '여성 · 개인차' : '여성 평균') : '중간 ' + Math.round(m * 100) + '%';
     $('xB').value = Math.round(ext.B * 1000); $('xW').value = Math.round(ext.W * 1000); $('xH').value = Math.round(ext.H * 1000);
@@ -445,11 +488,11 @@
     $('oH').textContent = ((fm.hip + ext.H * (D.metrics.HP.hip - fm.hip)) * 100).toFixed(0) + ' cm';
     $('xReset').disabled = !(ext.B > 0 || ext.W > 0 || ext.H > 0);
     $('master').value = Math.round(m * 1000);
-    [['S', 'fS', 'oS'], ['F', 'fF', 'oF'], ['M', 'fM', 'oM']].forEach(function (k) {
+    [['S', 'fS', 'oS'], ['F', 'fF', 'oF'], ['M', 'fM', 'oM'], ['K', 'fK', 'oK']].forEach(function (k) {
       $(k[1]).value = Math.round(w[k[0]] * 1000); $(k[2]).textContent = Math.round(w[k[0]] * 100) + '%';
     });
   }
-  function setAll(v) { w.S = w.F = w.M = Math.max(0, Math.min(1, v)); dirtyShape = true; kick(); }
+  function setAll(v) { w.S = w.F = w.M = w.K = Math.max(0, Math.min(1, v)); dirtyShape = true; kick(); }
   function setPlaying(on) {
     ui.playing = on; $('btnPlay').classList.toggle('on', on);
     $('btnPlay').setAttribute('aria-label', on ? '일시정지' : '변화 재생');
@@ -459,20 +502,21 @@
 
   function bind() {
     $('master').addEventListener('input', function (e) { setPlaying(false); setAll(e.target.value / 1000); });
-    [['S', 'fS'], ['F', 'fF'], ['M', 'fM']].forEach(function (k) {
+    [['S', 'fS'], ['F', 'fF'], ['M', 'fM'], ['K', 'fK']].forEach(function (k) {
       $(k[1]).addEventListener('input', function (e) { setPlaying(false); w[k[0]] = e.target.value / 1000; dirtyShape = true; kick(); });
     });
     [['B', 'xB'], ['W', 'xW'], ['H', 'xH']].forEach(function (k) {
       $(k[1]).addEventListener('input', function (e) {
         setPlaying(false);
         ext[k[0]] = e.target.value / 1000;
-        if (w.F < 0.25) w.S = w.F = w.M = 1;        // variation only shows on the female side, so go there
+        if (w.F < 0.25) w.S = w.F = w.M = w.K = 1;  // variation only shows on the female side, so go there
         dirtyShape = true; kick();
       });
     });
     $('xReset').addEventListener('click', function () { ext.B = ext.W = ext.H = 0; dirtyShape = true; kick(); });
     $('btnPlay').addEventListener('click', function () { setPlaying(!ui.playing); });
     $('btnGuides').addEventListener('click', function (e) { ui.guides = !ui.guides; e.currentTarget.setAttribute('aria-pressed', String(ui.guides)); dirtyView = true; kick(); });
+    $('btnHair').addEventListener('click', function (e) { ui.hair = !ui.hair; e.currentTarget.setAttribute('aria-pressed', String(ui.hair)); dirtyView = true; kick(); });
     $('btnSpin').addEventListener('click', function (e) { ui.spin = !ui.spin; e.currentTarget.setAttribute('aria-pressed', String(ui.spin)); kick(); });
     $('btnFront').addEventListener('click', function () { ui.spin = false; $('btnSpin').setAttribute('aria-pressed', 'false'); view.yaw = 0; view.pitch = 0.04; view.zoom = 1; view.panY = 0; dirtyView = true; kick(); });
 
@@ -547,7 +591,7 @@
         var v = mean();
         v += ui.dir * dt * 0.2535 * (0.25 + 3 * v * (1 - v));     // eases in and out, about six seconds per pass
         if (v >= 1) { v = 1; ui.dir = -1; ui.hold = 1.1; } else if (v <= 0) { v = 0; ui.dir = 1; ui.hold = 1.1; }
-        w.S = w.F = w.M = v; dirtyShape = true;
+        w.S = w.F = w.M = w.K = v; dirtyShape = true;
       }
       again = true;
     }
@@ -555,7 +599,7 @@
     if (Math.abs(hiAmt - hiTarget) > 0.004) { hiAmt += (hiTarget - hiAmt) * Math.min(1, dt * 9); dirtyView = true; again = true; } else if (hiAmt !== hiTarget) { hiAmt = hiTarget; dirtyView = true; }
 
     if (gl && (dirtyShape || dirtyView)) {
-      if (dirtyShape) { blend(); syncUI(); }
+      if (dirtyShape) { blend(); blendHair(); syncUI(); }
       updateCamera(); drawGL(); drawOverlay();
       dirtyShape = dirtyView = false;
     }
@@ -579,14 +623,15 @@
   // small hook for automated screenshots
   window.__body = {
     set: function (o) {
-      if (o.t != null) { w.S = w.F = w.M = o.t; }
-      ['S', 'F', 'M'].forEach(function (k) { if (o[k] != null) w[k] = o[k]; });
+      if (o.t != null) { w.S = w.F = w.M = w.K = o.t; }
+      ['S', 'F', 'M', 'K'].forEach(function (k) { if (o[k] != null) w[k] = o[k]; });
+      if (o.hair != null) { ui.hair = o.hair; $('btnHair').setAttribute('aria-pressed', String(ui.hair)); }
       ['B', 'W', 'H'].forEach(function (k) { if (o[k] != null) ext[k] = o[k]; });
       ['yaw', 'pitch', 'zoom', 'panY'].forEach(function (k) { if (o[k] != null) view[k] = o[k]; });
       if (o.guides != null) ui.guides = o.guides;
       dirtyShape = dirtyView = true; kick();
     },
     topic: setTopic,
-    get: function () { return { w: { S: w.S, F: w.F, M: w.M }, ext: { B: ext.B, W: ext.W, H: ext.H }, view: { yaw: view.yaw, pitch: view.pitch, zoom: view.zoom }, playing: ui.playing, guides: ui.guides, spin: ui.spin, topic: ui.topic }; }
+    get: function () { return { w: { S: w.S, F: w.F, M: w.M, K: w.K }, hair: ui.hair, ext: { B: ext.B, W: ext.W, H: ext.H }, view: { yaw: view.yaw, pitch: view.pitch, zoom: view.zoom }, playing: ui.playing, guides: ui.guides, spin: ui.spin, topic: ui.topic }; }
   };
 })();
