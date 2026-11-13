@@ -346,7 +346,7 @@ function build(P) {
     shoulder: [P.shX, ySh, -0.014], chest: [0, yChest, 0.06], waist: [0, yWaist, 0.02],
     pelvis: [0, yHip, 0], glute: [0.08, yHip - 0.03, P.gluteZ],
     thigh: V.lerp(hipJ, knee, 0.4), knee, calf: V.lerp(knee, ankle, 0.33), ankle, hipJ,
-    elbow: E, wrist: W, upperArm: V.lerp(S, E, 0.5), foreArm: V.lerp(E, W, 0.4),
+    armTop: S, elbow: E, wrist: W, upperArm: V.lerp(S, E, 0.5), foreArm: V.lerp(E, W, 0.4),
     hand: V.add(W, V.mul(dF, hl * 0.5)), foot: [P.ankleX, 0.03, z0 + fl * 0.5],
   };
   return { prims: L, lm, y: { yAnkle, yKnee, yCrotch, yHip, yWaist, yChest, ySh, yChin }, P };
@@ -707,6 +707,29 @@ const bands = {
 let topVert = 0;
 for (let i = 0; i < NV; i++) if (base.pos[i * 3 + 1] > base.pos[topVert * 3 + 1]) topVert = i;
 
+// Garment coordinates per vertex, taken on the male figure: how far along the arm (shoulder 0 → wrist 1)
+// and the leg (hip joint 0 → ankle 1) a vertex sits, and how much it belongs to each. The app cuts
+// sleeves, trouser legs and waistbands with these, so clothes follow every shape the body can take.
+const LEG_PARTS = new Set(['leg', 'patella', 'heel', 'instep', 'toes']);
+const gar = new Uint8Array(NV * 4);
+{
+  const L = corners.base.prims, lm = corners.base.lm;
+  const along = (p, a, b) => V.dot(V.sub(p, a), V.sub(b, a)) / V.dot(V.sub(b, a), V.sub(b, a));
+  const q = (t) => Math.max(0, Math.min(255, Math.round((t + 0.5) / 2 * 255)));      // −0.5 … 1.5 in a byte
+  for (let i = 0; i < NV; i++) {
+    const p = [Math.abs(base.pos[i * 3]), base.pos[i * 3 + 1], base.pos[i * 3 + 2]];
+    let best = 1e9;
+    const ds = L.map((pr) => { const d = evalPrim(pr, p[0], p[1], p[2]); if (d < best) best = d; return d; });
+    let wa = 0, wl = 0, ws = 0;
+    L.forEach((pr, j) => {
+      const w = Math.exp(-(ds[j] - best) / 0.016);
+      ws += w;
+      if (ARM_PARTS.has(pr.name)) wa += w; else if (LEG_PARTS.has(pr.name)) wl += w;
+    });
+    gar.set([q(along(p, lm.armTop, lm.wrist)), Math.round(wa / ws * 255), q(along(p, lm.hipJ, lm.ankle)), Math.round(wl / ws * 255)], i * 4);
+  }
+}
+
 // ───────────────────────────── hair ─────────────────────────────
 // style 0: an ordinary short cut.  style 1: longer than shoulder length, permed.
 // The same four parts make both; in the short style the hanging parts shrink away inside the cap.
@@ -855,7 +878,7 @@ const data = {
   nv: NV, nt: NT, grid: GRID,
   bbMin, bbMax,
   pos: b64(qPos), nrm: b64(q8(base.nrm, 127)), ao: b64(qu8(base.ao)),
-  idx: b64(new Uint16Array(mesh.tris)),
+  idx: b64(new Uint16Array(mesh.tris)), gar: b64(gar),
   targets, extras, hair: hairPack,
   metrics: round(metrics), cupTable: round(cupTable),
   lm: round({ male: corners.base.lm, female: corners.full.lm }),

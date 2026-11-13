@@ -74,12 +74,51 @@
   var basePos = new Float32Array(NV * 3);
   for (var i = 0; i < NV; i++) { basePos[i * 3] = base[i * STRIDE]; basePos[i * 3 + 1] = base[i * STRIDE + 1]; basePos[i * 3 + 2] = base[i * STRIDE + 2]; }
 
+  // garment coordinates per body vertex: arm position, arm share, leg position, leg share (see tools/bake.mjs)
+  var garU8 = dec(D.gar);
+  var LM = D.lm.male, LF = D.lm.female;
+  // only the triangles a garment can ever cover are drawn for it
+  var shirtIdx = [], pantsIdx = [];
+  (function () {
+    var yHip = LM.pelvis[1], yWaist = LM.waist[1], yTop = LM.chin[1] + 0.03;
+    for (var t = 0; t < indices.length; t += 3) {
+      var top = false, bottom = false;
+      for (var k = 0; k < 3; k++) {
+        var v = indices[t + k], y = basePos[v * 3 + 1];
+        var armT = garU8[v * 4] / 255 * 2 - 0.5, armW = garU8[v * 4 + 1] / 255, legT = garU8[v * 4 + 2] / 255 * 2 - 0.5, legW = garU8[v * 4 + 3] / 255;
+        if (y > yHip - 0.12 && y < yTop && !(armW > 0.5 && armT > 0.6)) top = true;
+        if (y < yWaist + 0.03 && armW < 0.6 && !(legW > 0.5 && legT > 1.03)) bottom = true;
+      }
+      if (top) shirtIdx.push(indices[t], indices[t + 1], indices[t + 2]);
+      if (bottom) pantsIdx.push(indices[t], indices[t + 1], indices[t + 2]);
+    }
+    shirtIdx = new Uint16Array(shirtIdx); pantsIdx = new Uint16Array(pantsIdx);
+  })();
+
+  // skirt: a small mesh rebuilt from the body's current shape (rings from the waist down)
+  var SK_SEG = 64, SK_RING = 18, SK_N = SK_RING * (SK_SEG + 1);
+  var skirtBuf = new Float32Array(SK_N * STRIDE), skirtEnv = new Float32Array(SK_RING * SK_SEG), skirtR = new Float32Array(SK_RING * SK_SEG);
+  var skirtIdx = (function () {
+    var out = [];
+    for (var i = 0; i < SK_RING - 1; i++) for (var j = 0; j < SK_SEG; j++) {
+      var a = i * (SK_SEG + 1) + j, b = a + 1, c = a + SK_SEG + 1, d = c + 1;
+      out.push(a, c, b, b, c, d);
+    }
+    return new Uint16Array(out);
+  })();
+  var skirtCand = [];                              // body vertices that can hold a skirt out: hips and legs, not the arms
+  for (var sv = 0; sv < NV; sv++) {
+    var sy = basePos[sv * 3 + 1];
+    if (sy > LM.knee[1] - 0.06 && sy < LM.waist[1] + 0.07 && garU8[sv * 4 + 1] < 128) skirtCand.push(sv);
+  }
+  var skirtOn = false, skirtHem = 0;
+
   // ───────────── state ─────────────
-  var w = { S: 0, F: 0, M: 0, K: 0 };              // 0 = male average, 1 = female average; K is the hair style
+  var w = { S: 0, F: 0, M: 0, K: 0 };              // 0 = male average, 1 = female average; K is styling: hair and clothes
   var ext = { B: 0, W: 0, H: 0 };                  // individual variation past the female average: bust, waist, hips
   var view = { yaw: -0.42, pitch: 0.10, zoom: 1, panY: 0 };
   var HOME = { yaw: -0.42, pitch: 0.10, zoom: 1, panY: 0 };
-  var ui = { guides: true, hair: true, spin: false, playing: false, dir: 1, hold: 0, topic: null };
+  var ui = { guides: true, hair: true, clothes: true, spin: false, playing: false, dir: 1, hold: 0, topic: null };
   var dirtyShape = true, dirtyView = true, raf = 0, lastT = 0, insetTop = 0;
 
   var mean = function () { return (w.S + w.F + w.M) / 3; };
@@ -101,22 +140,52 @@
   }
 
   // ───────────── WebGL ─────────────
-  var gl = null, prog = null, floorProg = null, vbo = null, ibo = null, bbo = null, fbo = null, hvbo = null, hibo = null;
+  var gl = null, prog = null, floorProg = null, vbo = null, ibo = null, bbo = null, fbo = null, hvbo = null, hibo = null, gbo = null, sibo = null, pibo = null, kvbo = null, kibo = null;
   var VS = [
-    'attribute vec3 aPos; attribute vec3 aNrm; attribute float aAo; attribute vec3 aBase;',
-    'uniform mat4 uVP;',
-    'varying vec3 vP; varying vec3 vN; varying float vAo; varying vec3 vB;',
-    'void main(){ vP=aPos; vN=aNrm; vAo=aAo; vB=vec3(abs(aBase.x),aBase.yz); gl_Position=uVP*vec4(aPos,1.0); }'
+    'attribute vec3 aPos; attribute vec3 aNrm; attribute float aAo; attribute vec3 aBase; attribute vec4 aGar;',
+    'uniform mat4 uVP; uniform float uOffset; uniform vec3 uArmA, uArmB, uLegA, uLegB;',
+    'varying vec3 vP; varying vec3 vN; varying float vAo; varying vec3 vB; varying vec4 vG;',
+    'void main(){',
+    '  vec3 p=aPos+aNrm*uOffset; vP=p; vN=aNrm; vAo=aAo; vB=vec3(abs(aBase.x),aBase.yz);',
+    // garment coordinates: position along the arm and the leg (exact, from the rest pose) and the baked shares
+    '  vec3 ab=uArmB-uArmA, lb=uLegB-uLegA;',
+    '  vG=vec4(dot(vB-uArmA,ab)/dot(ab,ab), aGar.y, dot(vB-uLegA,lb)/dot(lb,lb), aGar.w);',
+    '  gl_Position=uVP*vec4(p,1.0);',
+    '}'
   ].join('\n');
+  // uMode: 0 body, 1 hair, 2 top, 3 trousers, 4 skirt. Garments are the body surface pushed out a little
+  // and cut to shape, so they follow every body shape without any data of their own.
   var FS = [
     'precision highp float;',
-    'varying vec3 vP; varying vec3 vN; varying float vAo; varying vec3 vB;',
-    'uniform vec3 uEye, uKey, uFill, uBack, uRim, uTint, uAlbedo; uniform float uGloss;',
+    'varying vec3 vP; varying vec3 vN; varying float vAo; varying vec3 vB; varying vec4 vG;',
+    'uniform vec3 uEye, uKey, uFill, uBack, uRim, uTint, uAlbedo; uniform float uGloss, uMode;',
     'uniform vec3 uHiC[3]; uniform vec3 uHiR[3]; uniform float uHi;',
+    'uniform vec4 uNeck;',        // neckline: height, radius, slope, forward tilt
+    'uniform vec4 uCut;',         // top hem height, sleeve end, waistband height, trouser-leg end
+    'uniform vec2 uSkirt;',       // hem height (world), strength of the shade it casts on the legs
     'void main(){',
     '  vec3 n=normalize(vN), v=normalize(uEye-vP);',
-    '  float ao=vAo;',
-    '  vec3 albedo=uAlbedo;',
+    '  float ao=vAo, band=0.0;',
+    '  float armT=vG.x, armW=vG.y, legT=vG.z, legW=vG.w;',
+    '  if(uMode>1.5&&uMode<2.5){',
+    '    if(armW>0.5){ if(armT>uCut.y) discard; band=step(uCut.y-0.020,armT); }',
+    '    else{',
+    '      float r=length(vec2(vB.x,vB.z+0.012));',
+    '      float lim=uNeck.x+uNeck.z*(r-uNeck.y)-uNeck.w*(vB.z+0.012);',
+    '      if(vB.y<uCut.x||vB.y>lim) discard;',
+    '      band=max(step(vB.y,uCut.x+0.010),step(lim-0.011,vB.y));',
+    '    }',
+    '  }else if(uMode>2.5&&uMode<3.5){',
+    '    if(armW>0.5) discard;',
+    '    if(legW>0.5){ if(legT>uCut.w) discard; band=step(uCut.w-0.014,legT); }',
+    '    else{ if(vB.y>uCut.z) discard; band=step(uCut.z-0.024,vB.y); }',
+    '  }else if(uMode>3.5){',
+    '    if(!gl_FrontFacing) n=-n;',
+    '    band=step(0.5,vB.x);',
+    '  }else if(uMode<0.5&&legW>0.5){',
+    '    ao*=1.0-0.45*uSkirt.y*smoothstep(uSkirt.x-0.13,uSkirt.x,vP.y);',
+    '  }',
+    '  vec3 albedo=uAlbedo*(1.0-0.24*band);',
     '  float m=0.0;',
     '  for(int i=0;i<3;i++){ vec3 q=(vB-uHiC[i])/uHiR[i]; m=max(m,1.0-smoothstep(0.50,1.0,length(q))); }',
     '  albedo=mix(albedo,uTint,m*uHi*0.82);',
@@ -177,6 +246,11 @@
     ibo = gl.createBuffer(); gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ibo); gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, indices, gl.STATIC_DRAW);
     hvbo = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, hvbo); gl.bufferData(gl.ARRAY_BUFFER, hcur.byteLength, gl.DYNAMIC_DRAW);
     hibo = gl.createBuffer(); gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, hibo); gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, hindices, gl.STATIC_DRAW);
+    gbo = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, gbo); gl.bufferData(gl.ARRAY_BUFFER, garU8, gl.STATIC_DRAW);
+    sibo = gl.createBuffer(); gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, sibo); gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, shirtIdx, gl.STATIC_DRAW);
+    pibo = gl.createBuffer(); gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, pibo); gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, pantsIdx, gl.STATIC_DRAW);
+    kvbo = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, kvbo); gl.bufferData(gl.ARRAY_BUFFER, skirtBuf.byteLength, gl.DYNAMIC_DRAW);
+    kibo = gl.createBuffer(); gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, kibo); gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, skirtIdx, gl.STATIC_DRAW);
     fbo = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, fbo);
     gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-0.8, -0.8, 0.8, -0.8, -0.8, 0.8, 0.8, 0.8]), gl.STATIC_DRAW);
     gl.clearColor(0, 0, 0, 0);
@@ -279,6 +353,7 @@
 
   // ───────────── drawing ─────────────
   var A_COL = [95, 208, 197], B_COL = [242, 166, 94];
+  var TOP_A = [0.13, 0.36, 0.37], TOP_B = [0.72, 0.42, 0.20], BOTTOM_COL = [0.085, 0.10, 0.15];   // garment colours (linear)
   function blend() {
     var wS = w.S, wF = w.F, wM = w.M, wR = wS * wF * wM;
     var dS = deltas[0], dF = deltas[1], dM = deltas[2], dR = deltas[3];
@@ -303,6 +378,64 @@
     gl.bindBuffer(gl.ARRAY_BUFFER, hvbo); gl.bufferSubData(gl.ARRAY_BUFFER, 0, hcur);
   }
 
+  // The skirt hangs from the body as it is right now: fitted from the waist to the fullest part of the
+  // hips, then straight down with a slight flare and soft folds. Its length grows with the styling weight.
+  function buildSkirt() {
+    var c = w.K;
+    skirtOn = ui.clothes && c > 0.03;
+    if (!skirtOn) return;
+    var yW = mixMetric('waistY'), yH = mixMetric('hipY'), yK = lerp(LM.knee[1], LF.knee[1], w.S);
+    var top = yW + 0.016, bot = yW - Math.max(0.02, (yW - yK - 0.025) * c), dy = (top - bot) / (SK_RING - 1);
+    var wb = D.bands.waist, zc = 0, i, j, k;
+    for (i = 0; i < wb.length; i++) zc += cur[wb[i] * STRIDE + 2];
+    zc /= wb.length;
+    var env = skirtEnv, R = skirtR, TAU = Math.PI * 2;
+    for (i = 0; i < env.length; i++) env[i] = 0;
+    for (k = 0; k < skirtCand.length; k++) {                 // how far the body reaches in each direction at each ring
+      var o = skirtCand[k] * STRIDE, rf = (top - cur[o + 1]) / dy;
+      if (rf < -0.8 || rf > SK_RING - 0.2) continue;
+      var x = cur[o], z = cur[o + 2] - zc, rad = Math.sqrt(x * x + z * z);
+      j = Math.floor((Math.atan2(x, z) + Math.PI) / TAU * SK_SEG) % SK_SEG;
+      var i0 = Math.max(0, Math.floor(rf)), i1 = Math.min(SK_RING - 1, Math.ceil(rf));
+      if (rad > env[i0 * SK_SEG + j]) env[i0 * SK_SEG + j] = rad;
+      if (rad > env[i1 * SK_SEG + j]) env[i1 * SK_SEG + j] = rad;
+    }
+    for (j = 0; j < SK_SEG; j++) {                           // fitted above the hip line, hanging straight below it
+      var prev = 0;
+      for (i = 0; i < SK_RING; i++) {
+        var e = env[i * SK_SEG + j], y = top - i * dy;
+        if (e === 0 || (y < yH + 0.02 && e < prev)) e = prev;
+        R[i * SK_SEG + j] = prev = e;
+      }
+      for (i = SK_RING - 2; i >= 0; i--) if (R[i * SK_SEG + j] === 0) R[i * SK_SEG + j] = R[(i + 1) * SK_SEG + j];
+    }
+    for (var pass = 0; pass < 3; pass++) for (i = 0; i < SK_RING; i++) {       // soften around the ring
+      var first = R[i * SK_SEG], last = R[i * SK_SEG + SK_SEG - 1], before = last;
+      for (j = 0; j < SK_SEG; j++) {
+        var here = R[i * SK_SEG + j], next = j === SK_SEG - 1 ? first : R[i * SK_SEG + j + 1];
+        R[i * SK_SEG + j] = Math.max(here * 0.5 + (before + next) * 0.25, here - 0.004);
+        before = here;
+      }
+    }
+    for (i = 0; i < SK_RING; i++) for (j = 0; j <= SK_SEG; j++) {
+      var th = j / SK_SEG * TAU - Math.PI, yy = top - i * dy, d = Math.max(0, yH - yy), q = (i * (SK_SEG + 1) + j) * STRIDE;
+      var fold = Math.sin(12 * th + 0.7), rr = R[i * SK_SEG + (j % SK_SEG)] + 0.013 + 0.15 * d + 0.034 * d * fold;
+      skirtBuf[q] = rr * Math.sin(th); skirtBuf[q + 1] = yy + (i === SK_RING - 1 ? 0.004 * Math.sin(12 * th + 2.2) : 0); skirtBuf[q + 2] = zc + rr * Math.cos(th);
+      skirtBuf[q + 6] = 1 - 0.30 * Math.max(0, -fold) * Math.min(1, d / 0.25);
+    }
+    for (i = 0; i < SK_RING; i++) for (j = 0; j <= SK_SEG; j++) {              // normals from the neighbouring points
+      var jn = j === SK_SEG ? 1 : j + 1, jp = j === 0 ? SK_SEG - 1 : j - 1, iu = Math.max(0, i - 1), id = Math.min(SK_RING - 1, i + 1);
+      var a = (i * (SK_SEG + 1) + jp) * STRIDE, b = (i * (SK_SEG + 1) + jn) * STRIDE, u = (iu * (SK_SEG + 1) + j) * STRIDE, dn = (id * (SK_SEG + 1) + j) * STRIDE;
+      var tx = skirtBuf[b] - skirtBuf[a], ty = skirtBuf[b + 1] - skirtBuf[a + 1], tz = skirtBuf[b + 2] - skirtBuf[a + 2];
+      var sx = skirtBuf[dn] - skirtBuf[u], sy2 = skirtBuf[dn + 1] - skirtBuf[u + 1], sz = skirtBuf[dn + 2] - skirtBuf[u + 2];
+      var nx = sy2 * tz - sz * ty, ny = sz * tx - sx * tz, nz = sx * ty - sy2 * tx, l = Math.sqrt(nx * nx + ny * ny + nz * nz) || 1;
+      var q2 = (i * (SK_SEG + 1) + j) * STRIDE;
+      skirtBuf[q2 + 3] = nx / l; skirtBuf[q2 + 4] = ny / l; skirtBuf[q2 + 5] = nz / l;
+    }
+    skirtHem = bot;
+    gl.bindBuffer(gl.ARRAY_BUFFER, kvbo); gl.bufferSubData(gl.ARRAY_BUFFER, 0, skirtBuf);
+  }
+
   function drawGL() {
     var W = glCanvas.width, H = glCanvas.height, m = mean();
     gl.viewport(0, 0, W, H);
@@ -322,19 +455,22 @@
     gl.disable(gl.BLEND); gl.enable(gl.DEPTH_TEST); gl.enable(gl.CULL_FACE); gl.cullFace(gl.BACK);
     gl.useProgram(prog.p);
     var loc = function (n) { return gl.getAttribLocation(prog.p, n); };
-    gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
-    var aP = loc('aPos'), aN = loc('aNrm'), aA = loc('aAo'), aB = loc('aBase');
-    gl.enableVertexAttribArray(aP); gl.vertexAttribPointer(aP, 3, gl.FLOAT, false, STRIDE * 4, 0);
-    gl.enableVertexAttribArray(aN); gl.vertexAttribPointer(aN, 3, gl.FLOAT, false, STRIDE * 4, 12);
-    gl.enableVertexAttribArray(aA); gl.vertexAttribPointer(aA, 1, gl.FLOAT, false, STRIDE * 4, 24);
-    gl.bindBuffer(gl.ARRAY_BUFFER, bbo);
-    gl.enableVertexAttribArray(aB); gl.vertexAttribPointer(aB, 3, gl.FLOAT, false, 0, 0);
-    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ibo);
+    var aP = loc('aPos'), aN = loc('aNrm'), aA = loc('aAo'), aB = loc('aBase'), aG = loc('aGar');
+    var bindMesh = function (buf) {                          // an interleaved position / normal / occlusion buffer
+      gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+      gl.enableVertexAttribArray(aP); gl.vertexAttribPointer(aP, 3, gl.FLOAT, false, STRIDE * 4, 0);
+      gl.enableVertexAttribArray(aN); gl.vertexAttribPointer(aN, 3, gl.FLOAT, false, STRIDE * 4, 12);
+      gl.enableVertexAttribArray(aA); gl.vertexAttribPointer(aA, 1, gl.FLOAT, false, STRIDE * 4, 24);
+      gl.enableVertexAttribArray(aB);
+    };
+    bindMesh(vbo);
+    gl.bindBuffer(gl.ARRAY_BUFFER, bbo); gl.vertexAttribPointer(aB, 3, gl.FLOAT, false, 0, 0);
+    gl.bindBuffer(gl.ARRAY_BUFFER, gbo); gl.enableVertexAttribArray(aG); gl.vertexAttribPointer(aG, 4, gl.UNSIGNED_BYTE, true, 0, 0);
 
     // lights ride with the camera so the figure reads the same from every side
     var cy = Math.cos(view.yaw), sy = Math.sin(view.yaw);
     var rot = function (v) { var l = Math.hypot(v[0], v[1], v[2]); return [(v[0] * cy + v[2] * sy) / l, v[1] / l, (-v[0] * sy + v[2] * cy) / l]; };
-    var u = prog.u;
+    var u = prog.u, c = w.K;
     gl.uniformMatrix4fv(u.uVP, false, VP);
     gl.uniform3fv(u.uEye, eye);
     gl.uniform3fv(u.uKey, rot([-0.52, 0.62, 0.60]));
@@ -343,21 +479,52 @@
     gl.uniform3f(u.uRim, lerp(A_COL[0], B_COL[0], m) / 255 * 0.9, lerp(A_COL[1], B_COL[1], m) / 255 * 0.9, lerp(A_COL[2], B_COL[2], m) / 255 * 0.9);
     gl.uniform3f(u.uTint, 1.0, 0.62, 0.20);
     gl.uniform3fv(u.uHiC, hiC); gl.uniform3fv(u.uHiR, hiR); gl.uniform1f(u.uHi, hiAmt);
+    // clothes change with the styling weight: T-shirt and long trousers → scoop-neck top and a skirt over short shorts
+    gl.uniform4f(u.uNeck, LM.shoulder[1] + 0.030, lerp(0.080, 0.100, c), 1.3, lerp(0.25, 0.50, c));
+    // (the top's hem rises to just under the waist as the skirt grows, so it sits tucked in)
+    gl.uniform4f(u.uCut, lerp(LM.pelvis[1] - 0.035, LM.waist[1] - 0.035, Math.min(1, c * 2.5)), lerp(0.34, 0.22, c), LM.pelvis[1] + 0.075, lerp(0.94, 0.13, c));
+    gl.uniform3fv(u.uArmA, LM.armTop); gl.uniform3fv(u.uArmB, LM.wrist); gl.uniform3fv(u.uLegA, LM.hipJ); gl.uniform3fv(u.uLegB, LM.ankle);
+    gl.uniform2f(u.uSkirt, skirtHem, ui.clothes && !ui.topic && skirtOn ? Math.min(1, c * 2) : 0);
+
+    gl.uniform1f(u.uMode, 0); gl.uniform1f(u.uOffset, 0);
     gl.uniform3f(u.uAlbedo, 0.73, 0.735, 0.76); gl.uniform1f(u.uGloss, 0.07);
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ibo);
     gl.drawElements(gl.TRIANGLES, indices.length, gl.UNSIGNED_SHORT, 0);
 
-    // hair
+    var dressed = ui.clothes && !ui.topic;                   // a highlighted topic is shown on the bare figure
+    if (dressed) {
+      gl.uniform1f(u.uGloss, 0.025);
+      gl.uniform1f(u.uMode, 3); gl.uniform1f(u.uOffset, 0.004);
+      gl.uniform3f(u.uAlbedo, BOTTOM_COL[0], BOTTOM_COL[1], BOTTOM_COL[2]);
+      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, pibo);
+      gl.drawElements(gl.TRIANGLES, pantsIdx.length, gl.UNSIGNED_SHORT, 0);
+
+      gl.uniform1f(u.uMode, 2); gl.uniform1f(u.uOffset, 0.0075);
+      gl.uniform3f(u.uAlbedo, lerp(TOP_A[0], TOP_B[0], c), lerp(TOP_A[1], TOP_B[1], c), lerp(TOP_A[2], TOP_B[2], c));
+      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, sibo);
+      gl.drawElements(gl.TRIANGLES, shirtIdx.length, gl.UNSIGNED_SHORT, 0);
+    }
+
+    // the skirt and the hair are meshes of their own: no garment coordinates, no highlight
+    gl.disableVertexAttribArray(aG); gl.vertexAttrib4f(aG, 0, 0, 0, 0);
+    gl.uniform1f(u.uOffset, 0); gl.uniform1f(u.uHi, 0);
+    if (dressed && skirtOn) {
+      bindMesh(kvbo); gl.vertexAttribPointer(aB, 3, gl.FLOAT, false, STRIDE * 4, 0);
+      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, kibo);
+      gl.uniform1f(u.uMode, 4); gl.uniform1f(u.uGloss, 0.025);
+      gl.uniform3f(u.uAlbedo, BOTTOM_COL[0], BOTTOM_COL[1], BOTTOM_COL[2]);
+      gl.disable(gl.CULL_FACE);
+      gl.drawElements(gl.TRIANGLES, skirtIdx.length, gl.UNSIGNED_SHORT, 0);
+      gl.enable(gl.CULL_FACE);
+    }
     if (ui.hair) {
-      gl.bindBuffer(gl.ARRAY_BUFFER, hvbo);
-      gl.vertexAttribPointer(aP, 3, gl.FLOAT, false, STRIDE * 4, 0);
-      gl.vertexAttribPointer(aN, 3, gl.FLOAT, false, STRIDE * 4, 12);
-      gl.vertexAttribPointer(aA, 1, gl.FLOAT, false, STRIDE * 4, 24);
-      gl.vertexAttribPointer(aB, 3, gl.FLOAT, false, STRIDE * 4, 0);
+      bindMesh(hvbo); gl.vertexAttribPointer(aB, 3, gl.FLOAT, false, STRIDE * 4, 0);
       gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, hibo);
-      gl.uniform3f(u.uAlbedo, 0.265, 0.205, 0.165); gl.uniform1f(u.uGloss, 0.16); gl.uniform1f(u.uHi, 0);
+      gl.uniform1f(u.uMode, 1);
+      gl.uniform3f(u.uAlbedo, 0.265, 0.205, 0.165); gl.uniform1f(u.uGloss, 0.16);
       gl.drawElements(gl.TRIANGLES, hindices.length, gl.UNSIGNED_SHORT, 0);
     }
-    for (var a = 0; a < 4; a++) gl.disableVertexAttribArray(a);
+    for (var a = 0; a < 5; a++) gl.disableVertexAttribArray(a);
   }
 
   var ctx = ovCanvas.getContext('2d');
@@ -517,6 +684,7 @@
     $('btnPlay').addEventListener('click', function () { setPlaying(!ui.playing); });
     $('btnGuides').addEventListener('click', function (e) { ui.guides = !ui.guides; e.currentTarget.setAttribute('aria-pressed', String(ui.guides)); dirtyView = true; kick(); });
     $('btnHair').addEventListener('click', function (e) { ui.hair = !ui.hair; e.currentTarget.setAttribute('aria-pressed', String(ui.hair)); dirtyView = true; kick(); });
+    $('btnClothes').addEventListener('click', function (e) { ui.clothes = !ui.clothes; e.currentTarget.setAttribute('aria-pressed', String(ui.clothes)); dirtyShape = true; kick(); });
     $('btnSpin').addEventListener('click', function (e) { ui.spin = !ui.spin; e.currentTarget.setAttribute('aria-pressed', String(ui.spin)); kick(); });
     $('btnFront').addEventListener('click', function () { ui.spin = false; $('btnSpin').setAttribute('aria-pressed', 'false'); view.yaw = 0; view.pitch = 0.04; view.zoom = 1; view.panY = 0; dirtyView = true; kick(); });
 
@@ -599,7 +767,7 @@
     if (Math.abs(hiAmt - hiTarget) > 0.004) { hiAmt += (hiTarget - hiAmt) * Math.min(1, dt * 9); dirtyView = true; again = true; } else if (hiAmt !== hiTarget) { hiAmt = hiTarget; dirtyView = true; }
 
     if (gl && (dirtyShape || dirtyView)) {
-      if (dirtyShape) { blend(); blendHair(); syncUI(); }
+      if (dirtyShape) { blend(); blendHair(); buildSkirt(); syncUI(); }
       updateCamera(); drawGL(); drawOverlay();
       dirtyShape = dirtyView = false;
     }
@@ -626,12 +794,13 @@
       if (o.t != null) { w.S = w.F = w.M = w.K = o.t; }
       ['S', 'F', 'M', 'K'].forEach(function (k) { if (o[k] != null) w[k] = o[k]; });
       if (o.hair != null) { ui.hair = o.hair; $('btnHair').setAttribute('aria-pressed', String(ui.hair)); }
+      if (o.clothes != null) { ui.clothes = o.clothes; $('btnClothes').setAttribute('aria-pressed', String(ui.clothes)); }
       ['B', 'W', 'H'].forEach(function (k) { if (o[k] != null) ext[k] = o[k]; });
       ['yaw', 'pitch', 'zoom', 'panY'].forEach(function (k) { if (o[k] != null) view[k] = o[k]; });
       if (o.guides != null) ui.guides = o.guides;
       dirtyShape = dirtyView = true; kick();
     },
     topic: setTopic,
-    get: function () { return { w: { S: w.S, F: w.F, M: w.M, K: w.K }, hair: ui.hair, ext: { B: ext.B, W: ext.W, H: ext.H }, view: { yaw: view.yaw, pitch: view.pitch, zoom: view.zoom }, playing: ui.playing, guides: ui.guides, spin: ui.spin, topic: ui.topic }; }
+    get: function () { return { w: { S: w.S, F: w.F, M: w.M, K: w.K }, hair: ui.hair, clothes: ui.clothes, skirt: skirtOn, ext: { B: ext.B, W: ext.W, H: ext.H }, view: { yaw: view.yaw, pitch: view.pitch, zoom: view.zoom }, playing: ui.playing, guides: ui.guides, spin: ui.spin, topic: ui.topic }; }
   };
 })();

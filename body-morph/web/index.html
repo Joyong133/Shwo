@@ -27,6 +27,7 @@
     <div class="tools">
       <button class="chip-btn" id="btnGuides" aria-pressed="true">치수선</button>
       <button class="chip-btn" id="btnHair" aria-pressed="true">머리카락</button>
+      <button class="chip-btn" id="btnClothes" aria-pressed="true">옷</button>
       <button class="chip-btn" id="btnSpin" aria-pressed="false">자동 회전</button>
       <button class="chip-btn" id="btnFront">정면</button>
     </div>
@@ -73,10 +74,10 @@
           <input type="range" id="fM" min="0" max="1000" value="0">
         </div>
         <div class="factor">
-          <label for="fK"><b>머리 모양</b><span>짧은 머리 → 긴 파마 머리</span><output id="oK">0%</output></label>
+          <label for="fK"><b>머리·옷</b><span>짧은 머리·바지 → 긴 파마 머리·치마</span><output id="oK">0%</output></label>
           <input type="range" id="fK" min="0" max="1000" value="0">
         </div>
-        <p class="note">머리 모양은 몸의 차이가 아니라 <b>꾸밈의 차이</b>입니다. 성장이 끝난 뒤에는 성호르몬이 달라져도 <b>골격은 거의 변하지 않고</b>, 지방 분포와 근육량은 서서히 달라질 수 있습니다.</p>
+        <p class="note">머리 모양과 옷은 몸의 차이가 아니라 <b>꾸밈의 차이</b>입니다. 성장이 끝난 뒤에는 성호르몬이 달라져도 <b>골격은 거의 변하지 않고</b>, 지방 분포와 근육량은 서서히 달라질 수 있습니다.</p>
       </div>
 
       <div class="pane" id="pane-vary" role="tabpanel" aria-labelledby="tab-vary" hidden>
@@ -112,7 +113,7 @@
       <li>남녀 각각의 분포는 넓게 퍼져 있고 서로 많이 겹칩니다. 평균과 다른 체형도 모두 정상입니다.</li>
       <li>수치는 이해를 돕기 위한 <b>근사값·예시값</b>입니다. 연령, 인구 집단, 측정 방법에 따라 달라지므로 진단이나 평가에 쓰지 마세요.</li>
       <li><b>개인차</b> 탭의 가슴·허리·엉덩이 값은 평균이 아니라, 사람마다 다른 범위의 일부를 보여 주는 것입니다. 컵 크기는 가슴둘레에서 밑가슴둘레를 뺀 값(A컵 10 cm부터 2.5 cm 간격)으로 정했습니다.</li>
-      <li><b>머리 모양</b>(짧은 머리 ↔ 긴 파마 머리)은 몸의 차이가 아니라 꾸밈의 차이입니다. 변화를 알아보기 쉽게 함께 바뀌도록 했고, 화면의 <b>머리카락</b> 버튼으로 끌 수 있습니다.</li>
+      <li><b>머리 모양과 옷</b>(짧은 머리·바지 ↔ 긴 파마 머리·치마)은 몸의 차이가 아니라 꾸밈의 차이입니다. 변화를 알아보기 쉽게 함께 바뀌도록 했고, 화면의 <b>머리카락</b>·<b>옷</b> 버튼으로 끌 수 있습니다. 체형을 볼 때는 옷을 끄는 편이 잘 보입니다.</li>
       <li>모형은 생식기 등 세부 구조를 생략한 마네킹입니다.</li>
     </ul>
     <button class="primary" id="aboutClose">확인</button>

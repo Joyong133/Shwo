@@ -50,6 +50,7 @@ b{font-weight:650}
 .tools{position:absolute;right:12px;bottom:calc(12px + var(--stage-ib));display:grid;grid-template-columns:auto auto;gap:8px}
 .chip-btn{min-height:34px;padding:0 13px;border-radius:999px;font-size:12.5px;font-weight:600;color:var(--muted);
   background:rgba(18,22,27,.62);border:1px solid rgba(255,255,255,.1)}
+#btnFront{grid-column:2}
 .chip-btn[aria-pressed="true"]{color:#10151a;background:var(--fg);border-color:transparent}
 .chip-btn:active{transform:scale(.97)}
 
