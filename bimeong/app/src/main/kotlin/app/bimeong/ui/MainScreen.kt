@@ -95,6 +95,7 @@ private val Side = 16.dp
 fun MainScreen(state: PlayerState, now: Long, actions: PlayerActions, animateBackdrop: Boolean = true) {
     var showTimer by rememberSaveable { mutableStateOf(false) }
     var showTune by rememberSaveable { mutableStateOf(false) }
+    var filter by rememberSaveable { mutableStateOf(FILTER_ALL) }
     var deleting by remember { mutableStateOf<SavedMix?>(null) }
     val bars = WindowInsets.systemBars.asPaddingValues()
     val raining = state.playing && state.levels.keys.any { it.startsWith("rain_") }
@@ -129,18 +130,30 @@ fun MainScreen(state: PlayerState, now: Long, actions: PlayerActions, animateBac
                     modifier = Modifier.bleed(Side),
                 )
             }
-            for (category in Category.entries) {
-                val sounds = Sounds.all.filter { it.category == category }
-                item(span = { GridItemSpan(maxLineSpan) }, key = "title-$category") {
-                    SectionTitle(Sounds.title(category), sounds.count { it.id in state.levels }, Palette.accent(category))
+            item(span = { GridItemSpan(maxLineSpan) }, key = "filters") {
+                FilterRow(filter, state.levels.size, onSelect = { filter = it }, modifier = Modifier.bleed(Side))
+            }
+            if (filter == FILTER_ON) {
+                // Everything that is switched on, gathered in one place.
+                val sounds = Sounds.all.filter { it.id in state.levels }
+                if (sounds.isEmpty()) {
+                    item(span = { GridItemSpan(maxLineSpan) }, key = "none") {
+                        Text("켜진 소리가 없어요. 다른 분류에서 소리를 골라 보세요.", color = Palette.TextDim, fontSize = 14.sp, modifier = Modifier.padding(vertical = 24.dp))
+                    }
                 }
                 items(sounds, key = { it.id }) { sound ->
-                    SoundTile(
-                        sound = sound,
-                        level = state.levels[sound.id],
-                        onToggle = { actions.toggle(sound.id) },
-                        onLevel = { actions.setLevel(sound.id, it) },
-                    )
+                    SoundTile(sound, state.levels[sound.id], onToggle = { actions.toggle(sound.id) }, onLevel = { actions.setLevel(sound.id, it) })
+                }
+            } else {
+                for (category in Category.entries) {
+                    if (filter != FILTER_ALL && filter != category.name) continue
+                    val sounds = Sounds.all.filter { it.category == category }
+                    item(span = { GridItemSpan(maxLineSpan) }, key = "title-$category") {
+                        SectionTitle(Sounds.title(category), sounds.count { it.id in state.levels }, Palette.accent(category))
+                    }
+                    items(sounds, key = { it.id }) { sound ->
+                        SoundTile(sound, state.levels[sound.id], onToggle = { actions.toggle(sound.id) }, onLevel = { actions.setLevel(sound.id, it) })
+                    }
                 }
             }
         }
@@ -289,6 +302,45 @@ private fun MixCard(name: String, tag: String, mood: Mood?, levels: Map<String, 
     }
 }
 
+private const val FILTER_ALL = "all"
+private const val FILTER_ON = "on"
+
+/** Chips that narrow the long list down to one kind of sound, or to what is switched on right now. */
+@Composable
+private fun FilterRow(selected: String, activeCount: Int, onSelect: (String) -> Unit, modifier: Modifier = Modifier) {
+    LazyRow(
+        modifier = modifier.padding(top = 14.dp),
+        contentPadding = PaddingValues(horizontal = Side),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        item(key = FILTER_ALL) { FilterChip("전체", selected == FILTER_ALL, Palette.Primary) { onSelect(FILTER_ALL) } }
+        if (activeCount > 0 || selected == FILTER_ON) {
+            item(key = FILTER_ON) { FilterChip("켜짐 $activeCount", selected == FILTER_ON, Palette.Primary) { onSelect(FILTER_ON) } }
+        }
+        items(Category.entries, key = { it.name }) { category ->
+            FilterChip(Sounds.shortTitle(category), selected == category.name, Palette.accent(category)) { onSelect(category.name) }
+        }
+    }
+}
+
+@Composable
+private fun FilterChip(text: String, selected: Boolean, accent: Color, onClick: () -> Unit) {
+    val shape = RoundedCornerShape(50)
+    Text(
+        text,
+        color = if (selected) accent else Palette.Text,
+        fontSize = 14.sp,
+        fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+        modifier = Modifier
+            .clip(shape)
+            .background(if (selected) accent.copy(alpha = 0.18f) else Palette.Tile)
+            .border(1.dp, if (selected) accent.copy(alpha = 0.65f) else Palette.TileBorder, shape)
+            .clickable(role = Role.Tab, onClick = onClick)
+            .semantics { if (selected) stateDescription = "선택됨" }
+            .padding(horizontal = 14.dp, vertical = 8.dp),
+    )
+}
+
 @Composable
 private fun SectionTitle(title: String, active: Int, accent: Color) {
     Row(Modifier.padding(top = 14.dp, bottom = 2.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -324,7 +376,7 @@ private fun SoundTile(sound: SoundInfo, level: Float?, onToggle: () -> Unit, onL
         Text(
             sound.name,
             color = if (on) Palette.Text else Palette.TextDim,
-            fontSize = 13.sp,
+            fontSize = 12.5.sp,
             fontWeight = if (on) FontWeight.SemiBold else FontWeight.Normal,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,

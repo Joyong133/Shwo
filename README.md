@@ -56,4 +56,4 @@ WebXR은 **HTTPS 주소**에서만 동작합니다.
 
 ## 같은 저장소의 다른 프로젝트
 
-- [`bimeong/`](bimeong/README.md) — **비멍**: 여러 빗소리와 ASMR을 겹쳐 듣는 수면·집중용 안드로이드 앱. 설치 파일은 [`bimeong/dist/bimeong-1.0.0.apk`](bimeong/dist/bimeong-1.0.0.apk).
+- [`bimeong/`](bimeong/README.md) — **비멍**: 여러 빗소리와 ASMR을 겹쳐 듣는 수면·집중용 안드로이드 앱. 설치 파일은 [`bimeong/dist/bimeong-1.1.0.apk`](bimeong/dist/bimeong-1.1.0.apk).

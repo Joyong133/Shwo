@@ -126,12 +126,17 @@ fun tourMain(args: Array<String>) {
     val mixes = listOf(
         mapOf("rain_steady" to 0.6f, "rain_window" to 0.5f, "noise_brown" to 0.45f, "thunder" to 0.3f),
         mapOf("rain_tent" to 0.7f, "rain_leaves" to 0.4f, "wind" to 0.25f),
-        mapOf("rain_roof" to 0.6f, "rain_heavy" to 0.35f),
-        mapOf("rain_eaves" to 0.7f, "rain_drizzle" to 0.4f),
-        mapOf("fire" to 0.7f, "crickets" to 0.35f, "wind" to 0.25f),
-        mapOf("crickets" to 0.5f, "frogs" to 0.35f, "stream" to 0.3f),
-        mapOf("purr" to 0.6f, "rain_window" to 0.5f),
-        mapOf("waves" to 0.7f, "chimes" to 0.25f),
+        mapOf("rain_car" to 0.6f, "rain_road" to 0.5f),
+        mapOf("sizzle" to 0.55f, "rain_steady" to 0.5f, "rain_eaves" to 0.3f),
+        mapOf("cafe" to 0.55f, "rain_window" to 0.4f),
+        mapOf("whisper" to 0.6f, "brushing" to 0.4f, "tapping" to 0.3f),
+        mapOf("hum" to 0.55f, "rain_window" to 0.4f),
+        mapOf("shush" to 0.6f, "heartbeat" to 0.45f, "musicbox" to 0.3f),
+        mapOf("templebell" to 0.5f, "moktak" to 0.4f, "chimes" to 0.3f, "stream" to 0.3f, "birds" to 0.25f),
+        mapOf("cicada" to 0.45f, "wind" to 0.35f, "stream" to 0.3f),
+        mapOf("fire" to 0.5f, "wind" to 0.35f, "steps_snow" to 0.35f),
+        mapOf("underwater" to 0.6f, "whale" to 0.45f),
+        mapOf("bowl" to 0.5f, "om" to 0.45f, "choir" to 0.3f),
     )
     val mixer = Mixer(fs, 99L)
     mixer.master = 0.9f

@@ -68,7 +68,7 @@ internal class Purr(fs: Int, seed: Long) : Voice(fs) {
 /** Someone typing on a mechanical keyboard: words, spaces, pauses to think. */
 internal class Keyboard(fs: Int, seed: Long) : Voice(fs) {
     private val rng = Rng(seed)
-    private val grains = GrainPool(fs, 64)
+    private val hits = NoiseGrains(fs, seed * 31 + 3, 64)
     private var next = 0.4f * fs
     private var lettersLeft = 3 + rng.int(6)
     private var wordsLeft = 4 + rng.int(9)
@@ -77,16 +77,15 @@ internal class Keyboard(fs: Int, seed: Long) : Voice(fs) {
         val base = if (space) rng.range(0.68f, 0.76f) else rng.range(0.9f, 1.14f)
         val a = (if (space) 1f else 0.75f) * rng.range(0.7f, 1f)
         val pan = if (space) rng.range(-0.1f, 0.1f) else rng.range(-0.55f, 0.55f)
-        // Bottoming out.
-        grains.spawn(off, 230f * base, if (space) 0.06f else 0.035f, a * 0.45f, pan, attackMs = 0.5f)
-        grains.spawn(off, 1150f * base, 0.016f, a * 0.8f, pan)
-        grains.spawn(off, 2500f * base, 0.008f, a * 0.6f, pan)
-        grains.spawn(off, 3900f * base, 0.005f, a * 0.5f, pan)
-        grains.spawn(off, 5600f * base, 0.003f, a * 0.35f, pan)
+        // Bottoming out: plastic on plastic, with the dull knock of the case underneath.
+        hits.spawn(off, 230f * base, 3f, if (space) 0.06f else 0.035f, a * 0.3f, pan, attackMs = 0.5f)
+        hits.spawn(off, 1100f * base, 3f, 0.012f, a * 0.4f, pan)
+        hits.spawn(off, 2600f * base, 2.5f, 0.006f, a * 0.35f, pan)
+        hits.spawn(off, 4800f * base, 2f, 0.003f, a * 0.25f, pan)
         // Springing back.
         val up = off + (rng.range(0.055f, 0.105f) * fs).toInt()
-        grains.spawn(up, 1700f * base, 0.012f, a * 0.3f, pan)
-        grains.spawn(up, 4300f * base, 0.005f, a * 0.3f, pan)
+        hits.spawn(up, 1800f * base, 3f, 0.008f, a * 0.16f, pan)
+        hits.spawn(up, 4200f * base, 2f, 0.004f, a * 0.14f, pan)
     }
 
     private fun gauss(): Float = (rng.uni() + rng.uni() + rng.uni() - 1.5f) * 2f
@@ -110,7 +109,7 @@ internal class Keyboard(fs: Int, seed: Long) : Voice(fs) {
             t += gap * fs
         }
         next = t - n
-        grains.render(l, r, n)
+        hits.render(l, r, n)
     }
 }
 

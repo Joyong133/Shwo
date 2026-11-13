@@ -79,6 +79,25 @@ class ScreenshotTest {
     }
 
     @Test
+    fun filterChipsNarrowTheList() {
+        val recorder = Recorder()
+        compose.setContent { BimeongTheme { MainScreen(playing.copy(levels = playing.levels + ("whisper" to 0.6f)), 1_000_000L, recorder, animateBackdrop = false) } }
+        compose.onNodeWithText("목소리").performClick()
+        compose.waitForIdle()
+        compose.onRoot().captureRoboImage(shot("7_voice"))
+        // Only the voice sounds are listed now.
+        compose.onNodeWithText("허밍 자장가").performClick()
+        compose.onNodeWithText("보슬비").assertDoesNotExist()
+
+        compose.onNodeWithText("켜짐 5").performClick()
+        compose.waitForIdle()
+        compose.onRoot().captureRoboImage(shot("8_on"))
+        compose.onNodeWithText("먼 천둥").performClick()
+        compose.onNodeWithText("허밍 자장가").assertDoesNotExist()
+        assertEquals(listOf("toggle hum", "toggle thunder"), recorder.calls)
+    }
+
+    @Test
     fun sleepTimerSheet() {
         val recorder = Recorder()
         compose.setContent { BimeongTheme { MainScreen(playing, 1_000_000L, recorder, animateBackdrop = false) } }

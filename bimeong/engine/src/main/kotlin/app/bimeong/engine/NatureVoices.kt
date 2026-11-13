@@ -64,7 +64,21 @@ internal class Waves(fs: Int, seed: Long) : Voice(fs) {
     private val brown = Brown(Rng(seed * 31 + 4), fs)
     private val bed = Biquad().lowpass(fs, 280f)
 
+    // White water: countless tiny bubbles bursting as each wave runs up the sand and drains away.
+    private val foamL = foam(Rng(seed * 31 + 6))
+    private val foamR = foam(Rng(seed * 31 + 7))
+
+    private fun foam(r: Rng) = Texture(fs, r, white = 0.15f, pink = 0f, grainRate = 2600f, grainAmp = 1f, hp = 2200f, lp = 11000f, grainLo = 3400f, grainHi = 7000f, grainQ = 2f, wobble = 0f)
+
     override fun render(l: FloatArray, r: FloatArray, sl: FloatArray, sr: FloatArray, n: Int) {
+        var fl = 0f
+        var fr = 0f
+        for (b in breakers) {
+            fl += b.fizz * b.gl
+            fr += b.fizz * b.gr
+        }
+        foamL.render(l, n, fl * 0.13f, 0.15f + fl)
+        foamR.render(r, n, fr * 0.13f, 0.15f + fr)
         var i = 0
         val dt = CTRL.toFloat() / fs
         while (i < n) {
@@ -157,6 +171,12 @@ internal class Wind(fs: Int, seed: Long) : Voice(fs) {
     private var ampL = 0f
     private var ampR = 0f
 
+    // Leaves hissing against each other whenever a gust comes through.
+    private val leavesL = leaves(Rng(seed * 31 + 5))
+    private val leavesR = leaves(Rng(seed * 31 + 6))
+
+    private fun leaves(r: Rng) = Texture(fs, r, white = 0.2f, pink = 0.25f, grainRate = 2400f, grainAmp = 0.8f, hp = 2400f, lp = 9500f, grainLo = 3200f, grainHi = 6200f, grainQ = 1.3f, wobble = 0.3f)
+
     override fun render(l: FloatArray, r: FloatArray, sl: FloatArray, sr: FloatArray, n: Int) {
         var i = 0
         while (i < n) {
@@ -192,22 +212,15 @@ internal class Wind(fs: Int, seed: Long) : Voice(fs) {
             ampR = tR
             i += m
         }
+        leavesL.render(l, n, ampL * ampL * 0.09f, 0.2f + ampL)
+        leavesR.render(r, n, ampR * ampR * 0.09f, 0.2f + ampR)
     }
 }
 
 /** Camp fire: a low flutter of flame, a thread of hiss, and wood that snaps in fits and starts. */
 internal class Fire(fs: Int, seed: Long) : Voice(fs) {
     private val rng = Rng(seed)
-    private val grains = GrainPool(fs, 32)
-    private val buses = 3
-    private val exc = Array(buses) { FloatArray(0) }
-    private val bp = arrayOf(
-        Biquad().bandpass(fs, 1300f, 2f),
-        Biquad().bandpass(fs, 2900f, 2.5f),
-        Biquad().bandpass(fs, 5600f, 3f),
-    )
-    private val busL = floatArrayOf(panL(-0.55f), panL(0.1f), panL(0.6f))
-    private val busR = floatArrayOf(panR(-0.55f), panR(0.1f), panR(0.6f))
+    private val snaps = NoiseGrains(fs, seed * 31 + 9, 64)
     private var crackT = 0f
     private var burstLeft = 0f
     private var burstRate = 0f
@@ -221,29 +234,24 @@ internal class Fire(fs: Int, seed: Long) : Voice(fs) {
     private val flick = Flutter(rng, fs, 6f)
     private val flick2 = Flutter(rng, fs, 2.3f)
 
-    private fun crackle(off: Int, n: Int) {
-        val a = (rng.heavy() * 0.05f).coerceAtMost(0.4f) * 8f
-        val bus = rng.int(buses)
-        val e = exc[bus]
-        // A snap is a few closely spaced impulses, not a single click.
-        var p = off
+    private fun crackle(off: Int) {
+        val a = (rng.heavy() * 0.03f).coerceAtMost(0.26f)
+        val pan = rng.range(-0.7f, 0.7f)
+        // A snap is a few closely spaced cracks of different colour, not a single click.
+        var at = off
         var amp = a
         repeat(1 + rng.int(3)) {
-            if (p < n) e[p] += amp * rng.sign()
-            p += 2 + rng.int(30)
+            snaps.spawn(at, rng.logRange(900f, 6500f), rng.range(1.5f, 4f), rng.range(0.002f, 0.008f), amp, pan)
+            at += (rng.range(0.0005f, 0.004f) * fs).toInt()
             amp *= 0.6f
         }
-        if (a > 2.6f && rng.chance(0.5f)) {
+        if (a > 0.17f && rng.chance(0.5f)) {
             // A proper pop has a low body as well.
-            val pan = rng.range(-0.6f, 0.6f)
-            grains.spawn(off, rng.logRange(260f, 620f), 0.035f, a * 0.04f, pan, attackMs = 0.2f)
+            snaps.spawn(off, rng.logRange(250f, 600f), 2f, 0.03f, a * 0.6f, pan, attackMs = 0.2f)
         }
     }
 
     override fun render(l: FloatArray, r: FloatArray, sl: FloatArray, sr: FloatArray, n: Int) {
-        for (b in 0 until buses) {
-            if (exc[b].size < n) exc[b] = FloatArray(n) else java.util.Arrays.fill(exc[b], 0, n, 0f)
-        }
         val dt = n.toFloat() / fs
         if (burstLeft > 0f) burstLeft -= dt
         else if (rng.chance(dt * 0.35f)) {
@@ -254,28 +262,17 @@ internal class Fire(fs: Int, seed: Long) : Voice(fs) {
         val meanGap = fs / rate
         var t = crackT
         while (t < n) {
-            crackle(t.toInt(), n)
+            crackle(t.toInt())
             t += rng.expo(meanGap)
         }
         crackT = t - n
-        for (b in 0 until buses) {
-            val e = exc[b]
-            val f = bp[b]
-            val gl = busL[b]
-            val gr = busR[b]
-            for (i in 0 until n) {
-                val s = f.process(e[i]) + e[i] * 0.04f
-                l[i] += s * gl
-                r[i] += s * gr
-            }
-        }
-        grains.render(l, r, n)
+        snaps.render(l, r, n)
         for (i in 0 until n) {
             val fl = flick.next()
             val slow = flick2.next()
-            val hiss = 0.02f + 0.03f * slow
-            val low = roarLp.process(brown.next()) * (0.45f + 0.55f * fl) * 0.06f +
-                flame.process(pink.next()) * (0.3f + 0.7f * fl) * 0.15f
+            val hiss = 0.014f + 0.022f * slow
+            val low = roarLp.process(brown.next()) * (0.45f + 0.55f * fl) * 0.045f +
+                flame.process(pink.next()) * (0.3f + 0.7f * fl) * 0.11f
             l[i] += hissHpL.process(hissRng.bi()) * hiss + low
             r[i] += hissHpR.process(hissRng.bi()) * hiss + low
         }
@@ -371,95 +368,131 @@ internal class Crickets(fs: Int, seed: Long) : Voice(fs) {
     }
 }
 
-/** Morning woodland birds: a handful of species, each with its own phrase, answering one another. */
-internal class Birds(fs: Int, seed: Long) : Voice(fs) {
-    private val rng = Rng(seed)
+/**
+ * Sings a queued phrase of whistled notes, each gliding from one pitch to another.
+ * Used for birds, owls and anything else that calls in clear tones.
+ */
+internal class Chirper(private val fs: Int) {
+    private val dur = IntArray(MAX_NOTES)
+    private val gap = IntArray(MAX_NOTES)
+    private val f0 = FloatArray(MAX_NOTES)
+    private val f1 = FloatArray(MAX_NOTES)
+    private val amp = FloatArray(MAX_NOTES)
+    private val shape = IntArray(MAX_NOTES)
+    private var notes = 0
+    private var idx = 0
+    private var pos = 0
+    private var wait = 0
+    private var ph = 0f
+    private var vibPh = 0f
+    private var glide = 0f
+    private var glideMul = 1f
+    private var gl = 0f
+    private var gr = 0f
+    private var send = 0f
 
-    private inner class Singer {
-        val dur = IntArray(MAX_NOTES)
-        val gap = IntArray(MAX_NOTES)
-        val f0 = FloatArray(MAX_NOTES)
-        val f1 = FloatArray(MAX_NOTES)
-        val amp = FloatArray(MAX_NOTES)
-        val arc = BooleanArray(MAX_NOTES)
-        var notes = 0
-        var idx = 0
-        var pos = 0
-        var wait = 0
-        var ph = 0f
-        var h2 = 0f
-        var h3 = 0f
-        var gl = 0f
-        var gr = 0f
-        var send = 0f
-        var vibDepth = 0f
-        var vibPh = 0f
-        var glide = 0f
-        var glideMul = 1f
-        var active = false
+    @JvmField var h2 = 0f
+    @JvmField var h3 = 0f
+    @JvmField var vibDepth = 0f
+    @JvmField var vibRate = 28f
+    @JvmField var active = false
 
-        fun add(d: Float, g: Float, a: Float, b: Float, v: Float, isArc: Boolean = false) {
-            if (notes >= MAX_NOTES) return
-            dur[notes] = (d * fs).toInt().coerceAtLeast(8)
-            gap[notes] = (g * fs).toInt()
-            f0[notes] = a
-            f1[notes] = b
-            amp[notes] = v
-            arc[notes] = isArc
-            notes++
-        }
+    fun clear() {
+        notes = 0
+        idx = 0
+        pos = 0
+        wait = 0
+        h2 = 0f
+        h3 = 0f
+        vibDepth = 0f
+        vibRate = 28f
+    }
 
-        fun place(pan: Float, dist: Float, reverb: Float) {
-            gl = panL(pan) * dist
-            gr = panR(pan) * dist
-            send = reverb
-        }
+    /**
+     * @param seconds length of the note, @param pause silence after it
+     * @param from pitch at the start, @param to pitch at the end
+     * @param kind [GLIDE] straight slide, [ARC] up to `to` and back, [SWELL] slide that grows louder
+     */
+    fun add(seconds: Float, pause: Float, from: Float, to: Float, level: Float, kind: Int = GLIDE) {
+        if (notes >= MAX_NOTES) return
+        dur[notes] = (seconds * fs).toInt().coerceAtLeast(8)
+        gap[notes] = (pause * fs).toInt()
+        f0[notes] = from
+        f1[notes] = to
+        amp[notes] = level
+        shape[notes] = kind
+        notes++
+    }
 
-        fun render(l: FloatArray, r: FloatArray, sl: FloatArray, sr: FloatArray, n: Int) {
-            val tbl = Sine.table
-            var i = 0
-            while (i < n && active) {
-                if (wait > 0) {
-                    val skip = minOf(wait, n - i)
-                    wait -= skip
-                    i += skip
-                    continue
-                }
-                val d = dur[idx]
-                if (pos == 0) {
-                    glide = f0[idx]
-                    glideMul = (f1[idx] / f0[idx]).pow(1f / d)
-                }
-                val x = pos.toFloat() / d
-                val f = if (arc[idx]) f0[idx] + (f1[idx] - f0[idx]) * tbl[(x * (Sine.SIZE / 2)).toInt() and Sine.MASK]
-                else glide
-                glide *= glideMul
-                val vib = 1f + vibDepth * tbl[vibPh.toInt() and Sine.MASK]
-                val env = tbl[(x * (Sine.SIZE / 2)).toInt() and Sine.MASK]
-                val p = ph
-                val s = (tbl[p.toInt() and Sine.MASK] + h2 * tbl[(p * 2f).toInt() and Sine.MASK] + h3 * tbl[(p * 3f).toInt() and Sine.MASK]) *
-                    env * amp[idx]
-                l[i] += s * gl
-                r[i] += s * gr
-                sl[i] += s * gl * send
-                sr[i] += s * gr * send
-                ph += f * vib * Sine.SIZE / fs
-                if (ph >= Sine.SIZE) ph -= Sine.SIZE
-                vibPh += 28f * Sine.SIZE / fs
-                if (vibPh >= Sine.SIZE) vibPh -= Sine.SIZE
-                if (++pos >= d) {
-                    pos = 0
-                    wait = gap[idx]
-                    if (++idx >= notes) active = false
-                }
-                i++
+    fun start(pan: Float, level: Float, reverb: Float, delaySec: Float = 0f) {
+        gl = panL(pan) * level
+        gr = panR(pan) * level
+        send = reverb
+        wait = (delaySec * fs).toInt()
+        active = notes > 0
+    }
+
+    fun render(l: FloatArray, r: FloatArray, sl: FloatArray, sr: FloatArray, n: Int) {
+        val tbl = Sine.table
+        val half = Sine.SIZE / 2
+        var i = 0
+        while (i < n && active) {
+            if (wait > 0) {
+                val skip = minOf(wait, n - i)
+                wait -= skip
+                i += skip
+                continue
             }
+            val d = dur[idx]
+            if (pos == 0) {
+                glide = f0[idx]
+                glideMul = (f1[idx] / f0[idx]).pow(1f / d)
+            }
+            val x = pos.toFloat() / d
+            val bell = tbl[(x * half).toInt() and Sine.MASK]
+            val kind = shape[idx]
+            val f = if (kind == ARC) f0[idx] + (f1[idx] - f0[idx]) * bell else glide
+            glide *= glideMul
+            // A swelling note creeps in and is cut off at its loudest.
+            val env = if (kind == SWELL) x * x * (if (x > 0.93f) (1f - x) / 0.07f else 1f) else bell
+            val vib = 1f + vibDepth * tbl[vibPh.toInt() and Sine.MASK]
+            val p = ph
+            val s = (tbl[p.toInt() and Sine.MASK] + h2 * tbl[(p * 2f).toInt() and Sine.MASK] + h3 * tbl[(p * 3f).toInt() and Sine.MASK]) *
+                env * amp[idx]
+            l[i] += s * gl
+            r[i] += s * gr
+            sl[i] += s * gl * send
+            sr[i] += s * gr * send
+            ph += f * vib * Sine.SIZE / fs
+            if (ph >= Sine.SIZE) ph -= Sine.SIZE
+            vibPh += vibRate * Sine.SIZE / fs
+            if (vibPh >= Sine.SIZE) vibPh -= Sine.SIZE
+            if (++pos >= d) {
+                pos = 0
+                wait = gap[idx]
+                if (++idx >= notes) active = false
+            }
+            i++
         }
     }
 
-    private val singers = Array(4) { Singer() }
+    companion object {
+        const val MAX_NOTES = 28
+        const val GLIDE = 0
+        const val ARC = 1
+        const val SWELL = 2
+    }
+}
+
+/**
+ * Morning woodland birds. Each species has its own little phrase and, like real birds,
+ * says it several times over before falling quiet.
+ */
+internal class Birds(fs: Int, seed: Long) : Voice(fs) {
+    private val rng = Rng(seed)
+    private val singers = Array(4) { Chirper(fs) }
     private var nextSong = rng.range(0.2f, 1f)
-    private val perch = FloatArray(5) { rng.range(-0.85f, 0.85f) }
+    private val perch = FloatArray(7) { rng.range(-0.85f, 0.85f) }
     private val airL = Pink(Rng(seed * 31 + 1))
     private val airR = Pink(Rng(seed * 31 + 2))
     private val airLpL = Biquad().lowpass(fs, 3500f)
@@ -467,71 +500,101 @@ internal class Birds(fs: Int, seed: Long) : Voice(fs) {
     private val airHpL = Biquad().highpass(fs, 400f)
     private val airHpR = Biquad().highpass(fs, 400f)
 
-    private fun sing(s: Singer) {
-        s.notes = 0
-        s.idx = 0
-        s.pos = 0
-        s.wait = 0
-        s.vibDepth = 0f
-        s.h3 = 0f
+    private fun sing(s: Chirper) {
+        s.clear()
         val u = rng.uni()
         val species: Int
+        var level = rng.range(0.35f, 1f)
+        var reverb = 0.45f
         when {
-            u < 0.2f -> { // thin, high "tsee tsee"
+            u < 0.17f -> { // tit: a two-note see-saw, said over and over
                 species = 0
                 s.h2 = 0.05f
-                val f = rng.range(6200f, 7600f)
-                repeat(2 + rng.int(3)) { s.add(rng.range(0.09f, 0.14f), rng.range(0.05f, 0.08f), f, f * 0.93f, 0.5f) }
+                val hi = rng.range(5200f, 6200f)
+                val lo = hi * rng.range(0.66f, 0.76f)
+                val a = rng.range(0.10f, 0.13f)
+                val b = rng.range(0.11f, 0.15f)
+                repeat(3 + rng.int(4)) {
+                    s.add(a, 0.04f, hi, hi * 0.97f, 0.5f)
+                    s.add(b, 0.09f, lo, lo * 0.98f, 0.55f)
+                }
             }
-            u < 0.4f -> { // fast descending trill
+            u < 0.32f -> { // warbler: fast descending trill that swells and fades
                 species = 1
                 s.h2 = 0.1f
                 val f = rng.range(4800f, 5600f)
-                val count = 7 + rng.int(8)
+                val count = 8 + rng.int(9)
                 for (k in 0 until count) {
                     val swell = 0.35f + 0.65f * Sine.of(0.5f * (k + 0.5f) / count)
                     s.add(rng.range(0.045f, 0.06f), rng.range(0.018f, 0.028f), f, f * 0.62f, 0.55f * swell)
                 }
             }
-            u < 0.7f -> { // mellow fluting whistle
+            u < 0.52f -> { // thrush: unhurried fluting, rounded off with a quick twitter
                 species = 2
                 s.h2 = 0.12f
                 s.vibDepth = 0.006f
                 var f = rng.range(1700f, 2600f)
-                repeat(3 + rng.int(4)) {
+                repeat(3 + rng.int(3)) {
                     val to = f * rng.range(0.85f, 1.2f)
                     s.add(rng.range(0.16f, 0.32f), rng.range(0.04f, 0.12f), f, to, 0.7f)
                     f = (to * rng.range(0.8f, 1.3f)).coerceIn(1500f, 3400f)
                 }
+                repeat(2 + rng.int(4)) {
+                    val t = rng.range(4500f, 6800f)
+                    s.add(0.04f, 0.03f, t, t * rng.range(0.8f, 1.25f), 0.3f)
+                }
             }
-            u < 0.94f -> { // sparrow-like chirps
+            u < 0.70f -> { // sparrow: bright chirps, a few at a time
                 species = 3
                 s.h2 = 0.25f
                 s.h3 = 0.08f
+                val f = rng.range(3200f, 4200f)
                 repeat(2 + rng.int(5)) {
-                    val f = rng.range(3200f, 4200f)
-                    s.add(rng.range(0.055f, 0.09f), rng.range(0.06f, 0.2f), f, f * rng.range(1.35f, 1.6f), 0.5f, isArc = true)
+                    s.add(rng.range(0.055f, 0.09f), rng.range(0.07f, 0.2f), f * rng.range(0.95f, 1.05f), f * rng.range(1.35f, 1.6f), 0.5f, Chirper.ARC)
                 }
             }
-            else -> { // a cuckoo, far away across the valley
+            u < 0.82f -> { // bush warbler: a long whistle that grows and grows, then a sudden flourish
                 species = 4
+                s.h2 = 0.06f
+                val f = rng.range(1750f, 2100f)
+                s.add(rng.range(0.7f, 1.1f), 0.02f, f, f * 1.01f, 0.75f, Chirper.SWELL)
+                s.add(0.06f, 0.015f, f * 1.7f, f * 1.6f, 0.7f)
+                s.add(0.10f, 0.02f, f * 1.2f, f * 1.9f, 0.75f)
+                s.add(0.13f, 0.3f, f * 1.25f, f * 1.1f, 0.6f)
+            }
+            u < 0.93f -> { // dove: soft, low cooing
+                species = 5
+                s.h2 = 0.3f
+                s.h3 = 0.05f
+                val f = rng.range(470f, 540f)
+                repeat(2 + rng.int(2)) {
+                    s.add(0.17f, 0.07f, f, f * 1.04f, 0.6f)
+                    s.add(0.34f, 0.16f, f * 1.05f, f * 0.94f, 0.7f)
+                    s.add(0.17f, 0.07f, f, f * 1.04f, 0.5f)
+                    s.add(0.34f, 0.5f, f * 1.05f, f * 0.92f, 0.6f)
+                }
+                level = rng.range(0.25f, 0.5f)
+                reverb = 0.6f
+            }
+            else -> { // a cuckoo, far away across the valley
+                species = 6
                 s.h2 = 0.3f
                 s.h3 = 0.12f
                 repeat(2 + rng.int(2)) {
                     s.add(0.15f, 0.18f, 668f, 660f, 0.9f)
                     s.add(0.25f, 0.62f, 532f, 522f, 0.8f)
                 }
+                level = 0.2f
+                reverb = 0.6f
             }
         }
-        if (species == 4) s.place(perch[species], 0.2f, 0.6f)
-        else s.place(perch[species] + rng.range(-0.12f, 0.12f), rng.range(0.35f, 1f), 0.45f)
-        s.active = true
+        s.start(perch[species] + rng.range(-0.1f, 0.1f), level, reverb)
     }
 
     override fun render(l: FloatArray, r: FloatArray, sl: FloatArray, sr: FloatArray, n: Int) {
         nextSong -= n.toFloat() / fs
         if (nextSong <= 0f) {
-            nextSong = rng.range(0.5f, 3.2f)
+            nextSong = rng.range(0.6f, 3.4f)
             for (s in singers) {
                 if (!s.active) {
                     sing(s)
@@ -544,10 +607,6 @@ internal class Birds(fs: Int, seed: Long) : Voice(fs) {
             l[i] += airHpL.process(airLpL.process(airL.next())) * 0.02f
             r[i] += airHpR.process(airLpR.process(airR.next())) * 0.02f
         }
-    }
-
-    private companion object {
-        const val MAX_NOTES = 20
     }
 }
 

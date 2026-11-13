@@ -23,6 +23,7 @@ object Palette {
         Category.RAIN -> Color(0xFF6EC6FF)
         Category.NATURE -> Color(0xFF7EDC9A)
         Category.ASMR -> Color(0xFFFFC078)
+        Category.VOICE -> Color(0xFFFF9EC4)
         Category.NOISE -> Color(0xFFB8A6FF)
     }
 

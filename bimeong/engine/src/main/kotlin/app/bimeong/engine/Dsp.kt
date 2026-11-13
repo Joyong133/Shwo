@@ -439,10 +439,15 @@ internal class Modes(private val fs: Int, val size: Int) {
  * The body of a rain sound: smooth hiss plus a spray of tiny random impacts,
  * shaped by the surface the rain is falling on.
  *
+ * Each tiny impact rings briefly at one of two pitches, so it reads as a droplet rather than a click,
+ * and the low and high halves of the sound drift slowly and independently, the way real rain
+ * never holds perfectly still.
+ *
  * @param white level of flat noise
  * @param pink level of 1/f noise (weight, body)
  * @param grainRate tiny impacts per second
  * @param grainAmp level of the impacts; 1 carries the same power as white = 1
+ * @param wobble depth of the slow drift, 0 for a perfectly steady sound
  */
 internal class Texture(
     fs: Int, private val rng: Rng,
@@ -450,14 +455,24 @@ internal class Texture(
     grainRate: Float, grainAmp: Float,
     hp: Float, lp: Float,
     peakHz: Float = 0f, peakDb: Float = 0f, peakQ: Float = 0.7f,
+    grainLo: Float = 2400f, grainHi: Float = 5600f, grainQ: Float = 1.6f,
+    private val wobble: Float = 0.18f,
 ) {
     private val fHp = Biquad().highpass(fs, hp)
     private val fLp = Biquad().lowpass(fs, lp)
     private val fPk = Biquad().also { if (peakDb != 0f) it.peak(fs, peakHz, peakQ, peakDb) }
+    private val ringA = Biquad().bandpass(fs, grainLo, grainQ)
+    private val ringB = Biquad().bandpass(fs, grainHi, grainQ)
+    private val split = OnePole().set(fs, 1400f)
+    private val driftLo = Flutter(rng, 187, 0.45f)
+    private val driftHi = Flutter(rng, 187, 0.8f)
     private val pinkLevel = pink * Pink.NORM
     private val hasGrains = grainRate > 0f && grainAmp > 0f
     private val meanGap = if (hasGrains) fs / grainRate else 1e9f
-    private val gAmp = grainAmp * sqrt(meanGap) * 1.5275f
+
+    // A ringing grain carries less energy than a bare impulse; make up for it so grainAmp keeps its meaning.
+    private val gAmpA = grainAmp * sqrt(meanGap) * 1.5275f / sqrt(PI.toFloat() * grainLo / (grainQ * fs))
+    private val gAmpB = grainAmp * sqrt(meanGap) * 1.5275f / sqrt(PI.toFloat() * grainHi / (grainQ * fs))
     private var gap = rng.expo(meanGap)
     private var b0 = 0f
     private var b1 = 0f
@@ -470,25 +485,35 @@ internal class Texture(
         var p1 = b1
         var p2 = b2
         var gp = gap
+        val gLo = gain * (1f + wobble * (2f * driftLo.next() - 1f))
+        val gHi = gain * (1f + wobble * 1.4f * (2f * driftHi.next() - 1f))
         for (i in 0 until n) {
             val w = rng.bi()
             p0 = 0.99765f * p0 + w * 0.0990460f
             p1 = 0.96300f * p1 + w * 0.2965164f
             p2 = 0.57000f * p2 + w * 1.0526913f
             var x = w * wl + (p0 + p1 + p2 + w * 0.1848f) * pk
-            gp -= density
-            if (gp <= 0f) {
-                gp += rng.expo(meanGap)
-                // Cubed uniform: mostly faint impacts, a few clear ones, never a spike.
-                val u = rng.uni()
-                x += u * u * u * gAmp * rng.sign()
+            if (hasGrains) {
+                var ia = 0f
+                var ib = 0f
+                gp -= density
+                if (gp <= 0f) {
+                    gp += rng.expo(meanGap)
+                    // Cubed uniform: mostly faint impacts, a few clear ones, never a spike.
+                    val u = rng.uni()
+                    val a = u * u * u * rng.sign()
+                    if (rng.next() < 0) ia = a * gAmpA else ib = a * gAmpB
+                }
+                x += ringA.process(ia) + ringB.process(ib)
             }
-            out[i] += fLp.process(fPk.process(fHp.process(x))) * gain
+            val y = fLp.process(fPk.process(fHp.process(x)))
+            val lo = split.lp(y)
+            out[i] += lo * gLo + (y - lo) * gHi
         }
         b0 = p0
         b1 = p1
         b2 = p2
-        gap = if (hasGrains) gp else 1e9f
+        gap = gp
     }
 }
 
