@@ -217,6 +217,61 @@
     'uniform vec4 uBra;',          // band bottom, band top, strap x, strap half-width
     'uniform vec4 uBrief;',        // top at the front, top at the back, lowest edge (crotch), leg opening at the side
     'uniform float uSeamZ;',       // depth of the side seam: the front of the briefs is in front of it
+    'uniform vec3 uHead;',         // rest-pose head: top, height (vertex to chin), half breadth
+    'uniform float uFace;',        // 0 male … 1 female face
+    // The face is painted on the rest-pose head (b = vB, so it stays put whatever shape the head takes):
+    // colour and coverage, a little relief for the light to catch, and wetness for the eyes.
+    // X: across the face in head half-breadths; Y: down from the crown in head heights.
+    'void face(vec3 b, float down, out vec3 fc, out float cov, out float h, out float wet){',
+    '  fc=vec3(0.0); cov=0.0; h=0.0; wet=0.0;',
+    '  float X=b.x/uHead.z, Y=(uHead.x-b.y)/uHead.y;',
+    '  if(b.z<0.04||X>0.92||Y<0.33||Y>0.86) return;',
+    // eye: an almond opening (outer corner a little higher), white, brown iris, pupil, shade under the upper lid
+    '  float ex=(X-0.402)/0.188, ey=(0.487-Y)/0.0237-0.12*ex;',
+    '  float sp=max(0.0,1.0-ex*ex), up=pow(sp,0.62), lo=0.72*pow(sp,0.9);',
+    '  float open=smoothstep(-lo-0.08,-lo+0.08,ey)*(1.0-smoothstep(up-0.08,up+0.08,ey))*(1.0-smoothstep(0.96,1.0,abs(ex)));',
+    '  if(open>0.0){',
+    '    vec2 m=vec2(ex*0.0145,(ey+0.10)*0.0055); float r=length(m);',
+    '    vec3 c=vec3(0.80,0.78,0.75)*(0.8+0.2*sp);',
+    '    c=mix(c,vec3(0.26,0.16,0.10)*(0.7+0.3*smoothstep(0.0056,0.0025,r)),1.0-smoothstep(0.0052,0.0058,r));',
+    '    c=mix(c,vec3(0.03,0.025,0.02),1.0-smoothstep(0.0019,0.0023,r));',
+    '    c*=0.55+0.45*smoothstep(up-0.05,up-0.6,ey);',
+    '    fc=c; cov=open; wet=open; h=0.0010*sp*open;',
+    '  }',
+    // lash line along the upper lid (heavier toward the outer corner), a lighter line under the eye
+    '  float lw=0.28+0.30*smoothstep(-0.2,1.0,ex);',
+    '  float lash=smoothstep(up-0.04,up+0.04,ey)*(1.0-smoothstep(up+lw-0.05,up+lw+0.05,ey))*(1.0-smoothstep(1.0,1.1,abs(ex)));',
+    '  float lowl=smoothstep(-lo-0.16,-lo-0.10,ey)*(1.0-smoothstep(-lo-0.02,-lo+0.04,ey))*(1.0-smoothstep(0.85,1.0,abs(ex)));',
+    '  fc=mix(fc,vec3(0.09,0.07,0.06),lash); cov=max(cov,lash);',
+    '  fc=mix(fc,vec3(0.36,0.27,0.25),lowl*0.6*(1.0-cov)); cov=max(cov,lowl*0.6);',
+    // the fold of the upper lid and the crease above it (relief only)
+    '  float f1=(ey-up-0.9)/0.55, f2=(ey-up-2.0)/0.35;',
+    '  h+=(0.0011*exp(-f1*f1)-0.0008*exp(-f2*f2))*sp;',
+    // eyebrow: lower, straighter and thicker on the male face; higher, arched and finer on the female
+    '  float bx=(X-0.43)/0.29;',
+    '  float yc=mix(0.413,0.398,uFace)-mix(0.006,0.018,uFace)*(1.0-bx*bx);',
+    '  float th=mix(0.020,0.012,uFace)*(0.55+0.45*smoothstep(-1.1,-0.6,bx))*(1.0-0.65*smoothstep(0.0,1.0,bx));',
+    '  float brow=(1.0-smoothstep(0.25,1.0,abs(Y-yc)/th))*smoothstep(-1.1,-0.85,bx)*(1.0-smoothstep(0.85,1.05,bx));',
+    '  brow*=0.85*mix(0.55,1.0,smoothstep(-1.0,-0.55,bx));',
+    '  fc=mix(fc,vec3(0.16,0.11,0.08),brow*(1.0-cov)); cov=max(cov,brow); h+=0.0002*brow;',
+    // nostrils, on the underside of the nose
+    '  vec2 nq=vec2((X-0.095)/0.045,(Y-0.682)/0.011);',
+    '  float nost=(1.0-smoothstep(0.55,1.0,length(nq)))*step(0.075,b.z)*smoothstep(-0.2,-0.55,down)*0.8;',
+    '  fc=mix(fc,vec3(0.26,0.18,0.17),nost); cov=max(cov,nost); h-=0.0012*nost;',
+    // lips: a cupid's bow on the upper lip, a fuller lower lip (fuller still on the female face), the line between
+    '  float lx=X/mix(0.31,0.30,uFace);',
+    '  if(abs(lx)<1.08){',
+    '    float s=max(0.0,1.0-lx*lx), p1=(abs(lx)-0.25)/0.16, p2=lx/0.08;',
+    '    float bow=0.010*exp(-p1*p1)-0.004*exp(-p2*p2);',
+    '    float top=0.759-(mix(0.022,0.028,uFace)+bow)*pow(s,0.55), bot=0.759+mix(0.030,0.040,uFace)*pow(s,0.75);',
+    '    float lip=smoothstep(top-0.004,top+0.003,Y)*(1.0-smoothstep(bot-0.005,bot+0.004,Y))*(1.0-smoothstep(0.9,1.05,abs(lx)));',
+    '    vec3 lc=mix(vec3(0.64,0.50,0.48),vec3(0.68,0.48,0.49),uFace)*(0.92+0.08*smoothstep(0.759,bot,Y));',
+    '    fc=mix(fc,lc,lip*(1.0-cov)); cov=max(cov,lip);',
+    '    float line=(1.0-smoothstep(0.0,0.0028,abs(Y-0.759-0.004*lx*lx)))*(1.0-smoothstep(0.55,0.95,abs(lx)))*0.65;',
+    '    fc=mix(fc,vec3(0.32,0.21,0.20),line); cov=max(cov,line);',
+    '    h+=lip*0.0007*pow(s,0.5)-line*0.0006;',
+    '  }',
+    '}',
     'uniform vec3 uHiC[3]; uniform vec3 uHiR[3]; uniform float uHi;',
     'uniform vec4 uNeck;',        // neckline: height, radius, slope, forward tilt
     'uniform vec4 uCut;',         // top hem height, sleeve end, waistband height, trouser-leg end
@@ -272,7 +327,21 @@
     '  }else if(uMode<0.5&&legW>0.5){',
     '    ao*=1.0-0.45*uSkirt.y*smoothstep(uSkirt.x-0.13,uSkirt.x,vP.y);',
     '  }',
-    '  vec3 albedo=uAlbedo*(1.0-0.24*band);',
+    '  vec3 albedo=uAlbedo*(1.0-0.24*band); float gloss=uGloss;',
+    '  if(uMode<0.5){',
+    '    vec3 fc; float cov, h, wet;',
+    '    float down=n.y;',
+    '    face(vB,down,fc,cov,h,wet);',
+    '    if(cov>0.0||h!=0.0){',
+    '      albedo=mix(albedo,fc,cov); gloss+=0.5*wet;',
+    // relief: tilt the normal by the slope of the painted height (finite differences on the rest pose)
+    '      vec3 f2; float c2, hx, hy, w2; float e=0.0008;',
+    '      face(vB+vec3(e,0.0,0.0),down,f2,c2,hx,w2);',
+    '      face(vB+vec3(0.0,e,0.0),down,f2,c2,hy,w2);',
+    '      float sx=vP.x<0.0?-1.0:1.0;',
+    '      n=normalize(n-vec3(sx*(hx-h)/e,(hy-h)/e,0.0));',
+    '    }',
+    '  }',
     '  float m=0.0;',
     '  for(int i=0;i<3;i++){ vec3 q=(vB-uHiC[i])/uHiR[i]; m=max(m,1.0-smoothstep(0.50,1.0,length(q))); }',
     '  albedo=mix(albedo,uTint,m*uHi*0.82);',
@@ -283,7 +352,7 @@
     '  vec3 lit=amb+vec3(1.0,0.955,0.90)*kd*0.80+vec3(0.50,0.62,0.86)*fd*0.13;',
     '  vec3 col=albedo*lit;',
     '  vec3 hv=normalize(uKey+v);',
-    '  col+=vec3(1.0,0.97,0.93)*pow(max(dot(n,hv),0.0),30.0)*uGloss*kd;',
+    '  col+=vec3(1.0,0.97,0.93)*pow(max(dot(n,hv),0.0),mix(30.0,90.0,clamp(gloss*2.0-0.2,0.0,1.0)))*gloss*kd;',
     '  float fr=pow(1.0-max(dot(n,v),0.0),3.0);',
     '  col+=uRim*(fr*(0.10+0.50*bd)+bd*bd*0.16)*mix(0.35,1.0,ao);',
     '  gl_FragColor=vec4(pow(col,vec3(0.4545)),1.0);',
@@ -418,7 +487,7 @@
       facts: [['평균 키(한국 성인, 근사)', '남 약 172 cm · 여 약 160 cm']],
       hi: [[[L.hand[0], L.hand[1], L.hand[2]], [0.07, 0.13, 0.08]], [[L.foot[0], 0.04, L.foot[2]], [0.085, 0.085, 0.17]]] },
     { id: 'face', label: '얼굴형', title: '머리와 얼굴', tag: '골격',
-      body: '남성은 평균적으로 눈썹 위 뼈가 도드라지고 아래턱이 넓고 각지며 턱끝이 큽니다. 여성은 이마가 더 수직에 가깝고 턱선이 둥급니다.',
+      body: '남성은 평균적으로 눈썹 위 뼈가 도드라지고 아래턱이 넓고 각지며 턱끝이 큽니다. 여성은 이마가 더 수직에 가깝고 턱선이 둥급니다. 눈썹은 남성이 평균적으로 더 굵고 눈에 가깝게 놓이며, 입술은 여성이 상대적으로 도톰한 편입니다.',
       facts: [],
       hi: [[[0, L.top[1] - 0.15, 0.03], [0.10, 0.115, 0.11]]] }
   ];
@@ -802,6 +871,8 @@
     gl.uniform4f(u.uBra, bc[1] - br[1] - 0.030, bc[1] - 0.92 * br[1], bc[0] + 0.56 * br[0], 0.0065);
     gl.uniform4f(u.uBrief, LF.pelvis[1] + 0.022, LF.pelvis[1] + 0.034, LF.crotch[1] - 0.035, LF.pelvis[1] - 0.040);
     gl.uniform1f(u.uSeamZ, -0.006);
+    gl.uniform3f(u.uHead, LM.top[1], LM.head[2], LM.head[0]);
+    gl.uniform1f(u.uFace, 0.5 * (w.S + w.F));
     gl.uniform3fv(u.uArmA, LM.armTop); gl.uniform3fv(u.uArmB, LM.wrist); gl.uniform3fv(u.uLegA, LM.hipJ); gl.uniform3fv(u.uLegB, LM.ankle);
     gl.uniform2f(u.uSkirt, skirtHem, ui.clothes && !ui.topic && skirtOn ? Math.min(1, c * 2) : 0);
 
@@ -1159,7 +1230,7 @@
       } else if (ids.length === 2) {
         var a = pts[ids[0]], b = pts[ids[1]], dist = Math.hypot(a[0] - b[0], a[1] - b[1]), midY = (a[1] + b[1]) / 2;
         if (pinch) {
-          view.zoom = Math.max(0.8, Math.min(3, view.zoom * dist / pinch[0]));
+          view.zoom = Math.max(0.8, Math.min(4.5, view.zoom * dist / pinch[0]));
           var pxPerM = Math.min((cssH - 88 - insetTop) / 1.76, cssW / 1.34) * view.zoom;
           view.panY = Math.max(-0.8, Math.min(0.8, view.panY + (midY - pinch[1]) / pxPerM));
         }
@@ -1169,7 +1240,7 @@
     });
     var up = function (e) { release(e.pointerId); delete pts[e.pointerId]; pinch = null; kick(); };
     glCanvas.addEventListener('pointerup', up); glCanvas.addEventListener('pointercancel', up);
-    glCanvas.addEventListener('wheel', function (e) { e.preventDefault(); view.zoom = Math.max(0.8, Math.min(3, view.zoom * Math.exp(-e.deltaY * 0.0012))); dirtyView = true; kick(); }, { passive: false });
+    glCanvas.addEventListener('wheel', function (e) { e.preventDefault(); view.zoom = Math.max(0.8, Math.min(4.5, view.zoom * Math.exp(-e.deltaY * 0.0012))); dirtyView = true; kick(); }, { passive: false });
 
     glCanvas.addEventListener('webglcontextlost', function (e) { e.preventDefault(); gl = null; });
     glCanvas.addEventListener('webglcontextrestored', function () { if (initGL()) kick(); });

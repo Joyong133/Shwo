@@ -10,8 +10,8 @@ android {
         applicationId 'app.shwo.bodymorph'
         minSdk 26
         targetSdk 35
-        versionCode 7
-        versionName '1.6'
+        versionCode 8
+        versionName '1.7'
     }
 
     // A throwaway, publicly known key (same credentials as Android's debug key), kept in the repo so that

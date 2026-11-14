@@ -69,6 +69,8 @@ const T = {
   jawD:       [0.075, 0.068, 'S'],
   chinR:      [0.027, 0.019, 'S'],
   noseR:      [0.0105, 0.0092, 'S'],
+  sockD:      [0.0055, 0.0045, 'S'],   // depth of the eye socket under the brow
+  lipR:       [0.0085, 0.0105, 'F'],   // half height of the lips
   neckR:      [0.057, 0.047, { S: 0.45, M: 0.55 }],
   larynxR:    [0.012, 0.006, 'S'],
   larynxZ:    [0.045, 0.028, 'S'],
@@ -169,6 +171,7 @@ function prim(t, name, k, o, f, a1, a2, a3, h, opt) {
     ca: 1, cb: 0, smin: 1,
     bx: 0, by: 0, bz: 0, br: 0,
     st: null, tab: null, cap0: 0, cap1: 0, pw: 2,
+    sub: opt.sub ? 1 : 0,    // carved out of what came before it instead of added
   };
   if (t === 0) {
     p.bx = p.ox; p.by = p.oy; p.bz = p.oz; p.br = Math.max(a1, a2, a3);
@@ -300,6 +303,13 @@ function build(P) {
   L.push(ell('chin', [0, yChin + 0.024, 0.062 * hs], [P.chinR, 0.022, 0.022], 0.035));
   L.push(cap('nose', [0, H - 0.108 * hs, 0.087 * hs], [0, H - 0.149 * hs, 0.102 * hs], P.noseR * 0.58, P.noseR, 0.014));
   L.push(ell('ear', [P.headW + 0.001, H - 0.130 * hs, -0.008], [0.007, 0.029, 0.016], 0.006, { axis: [0.12, 1, -0.2] }));
+  // eyes and lips: a shallow socket under the brow and a little fullness at the mouth, placed on the face surface
+  // as built so far (the app paints the details: eyes, brows, nostrils, the colour and line of the lips)
+  const headSdf = makeSdf({ prims: L.slice() });
+  const front = (x, y) => { let lo = 0, hi = 0.25; for (let i = 0; i < 40; i++) { const m = (lo + hi) / 2; if (headSdf(x, y, m) < 0) lo = m; else hi = m; } return lo; };
+  const eyeX = 0.402 * P.headW, eyeY = H - 0.113 * hs, mouthY = H - 0.176 * hs;
+  L.push(ell('socket', [eyeX, eyeY + 0.002, front(eyeX, eyeY) + 0.004], [0.0175 * hs, 0.0125 * hs, P.sockD + 0.004], 0.008, { sub: true }));
+  L.push(ell('lips', [0, mouthY, front(0, mouthY) - 0.0075], [0.0235 * hs, P.lipR, 0.009], 0.014));
 
   // arm (hanging, slightly abducted, palm toward the thigh): one loft from shoulder to wrist
   const ab = P.armAb * Math.PI / 180;
@@ -351,6 +361,7 @@ function build(P) {
     armTop: S, elbow: E, wrist: W, upperArm: V.lerp(S, E, 0.5), foreArm: V.lerp(E, W, 0.4),
     hand: V.add(W, V.mul(dF, hl * 0.5)), foot: [P.ankleX, 0.03, z0 + fl * 0.5],
     breast: bC, breastRad: bRad, crotch: [0, yCrotch, 0], neck: [0, ySh, 0],
+    head: [P.headW, P.headD, P.headH],          // half breadth, half length, vertex to chin
   };
   return { prims: L, lm, y: { yAnkle, yKnee, yCrotch, yHip, yWaist, yChest, ySh, yChin }, P };
 }
@@ -364,6 +375,10 @@ function makeSdf(fig) {
     for (let i = 0; i < n; i++) {
       const p = L[i];
       const bx = ax - p.bx, by = y - p.by, bz = z - p.bz;
+      if (p.sub) {                    // carved out (eye sockets)
+        if (Math.sqrt(bx * bx + by * by + bz * bz) - p.br <= p.k) { const di = evalPrim(p, ax, y, z); d = smax(d, -di, p.k); dn = smax(dn, -di, p.k); }
+        continue;
+      }
       if (Math.sqrt(bx * bx + by * by + bz * bz) - p.br <= dn + p.k) {
         const di = evalPrim(p, ax, y, z);
         if (kind[i] === 1) d = smin(d, di, p.k);
