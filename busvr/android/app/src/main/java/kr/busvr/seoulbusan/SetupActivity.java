@@ -3,6 +3,7 @@ package kr.busvr.seoulbusan;
 import android.app.Activity;
 import android.content.ActivityNotFoundException;
 import android.content.Intent;
+import android.content.pm.PackageManager;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.os.Bundle;
@@ -64,11 +65,12 @@ public class SetupActivity extends Activity {
         text(root, HelperStarter.onWifi(this) ? "✓ Wi-Fi 연결됨" : "✗ Wi-Fi에 연결되어 있지 않습니다. 먼저 Wi-Fi를 켜 주세요.", 15,
                 HelperStarter.onWifi(this) ? Color.rgb(88, 224, 106) : Color.rgb(255, 120, 90), true);
 
-        text(root, "1. 설정 열기", 19, accent, true);
-        text(root, "아래 버튼을 누르면 옆에 설정 창이 열립니다. '무선 디버깅'을 켠 다음, '무선 디버깅' 글자를 눌러 들어가서 "
+        text(root, "1. 무선 디버깅 켜기", 19, accent, true);
+        text(root, "옆에 '무선 디버깅' 화면이 바로 열립니다. 맨 위 스위치를 켜고(이 네트워크에서 허용), "
                 + "'페어링 코드로 기기 페어링'을 누르세요. 6자리 숫자가 나옵니다. 그 창은 닫지 마세요.", 15, fg, false);
-        text(root, "개발자 옵션이 보이지 않으면: 설정 > 휴대전화 정보(디바이스 정보) > 빌드 번호를 7번 눌러 켭니다.", 13, muted, false);
-        button(root, "개발자 옵션 열기", v -> openDeveloperOptions());
+        text(root, "무선 디버깅 화면 대신 개발자 옵션이 열리면 목록에서 '무선 디버깅'을 누르세요. "
+                + "개발자 옵션도 없으면: 설정 > 휴대전화 정보 > 빌드 번호를 7번 누릅니다.", 13, muted, false);
+        button(root, "무선 디버깅 화면 다시 열기", v -> openWirelessDebugging());
 
         text(root, "2. 6자리 코드 입력", 19, accent, true);
         code = new EditText(this);
@@ -93,22 +95,29 @@ public class SetupActivity extends Activity {
         backButton = button(root, "버스로 돌아가기", v -> backToBus());
         text(root, "무선 디버깅은 설정이 끝나면 꺼도 됩니다. 버스 앱이 도우미를 켤 때만 잠깐 켰다가 다시 끕니다.", 13, muted, false);
         setContentView(sv);
+        if (b == null) sv.postDelayed(this::openWirelessDebugging, 600);
     }
 
-    private void openDeveloperOptions() {
-        Intent[] tries = {
-                new Intent(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS),
-                new Intent().setClassName("com.android.settings", "com.android.settings.Settings$DevelopmentSettingsDashboardActivity"),
-                new Intent(Settings.ACTION_DEVICE_INFO_SETTINGS),
-                new Intent(Settings.ACTION_SETTINGS)};
-        for (Intent i : tries) {
-            try {
-                i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_LAUNCH_ADJACENT | Intent.FLAG_ACTIVITY_MULTIPLE_TASK);
-                startActivity(i);
-                return;
-            } catch (ActivityNotFoundException | SecurityException ignored) { }
+    private boolean launch(Intent i) {
+        try {
+            i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_LAUNCH_ADJACENT | Intent.FLAG_ACTIVITY_MULTIPLE_TASK);
+            startActivity(i);
+            return true;
+        } catch (ActivityNotFoundException | SecurityException e) {
+            return false;
         }
-        log("설정 화면을 열 수 없습니다.");
+    }
+
+    /** Opens Settings > Developer options > Wireless debugging directly (Android 11+), else the closest screen. */
+    private void openWirelessDebugging() {
+        PackageManager pm = getPackageManager();
+        // The Wireless debugging page has its own exported Settings activity (also used by the quick-settings tile).
+        Intent direct = new Intent().setClassName("com.android.settings", "com.android.settings.Settings$WirelessDebuggingActivity");
+        if (direct.resolveActivityInfo(pm, 0) != null && launch(direct)) return;
+        log("무선 디버깅 화면을 바로 열 수 없어 개발자 옵션을 엽니다. 목록에서 '무선 디버깅'을 눌러 주세요.");
+        if (launch(new Intent(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS))) return;
+        if (launch(new Intent(Settings.ACTION_DEVICE_INFO_SETTINGS))) { log("개발자 옵션이 꺼져 있습니다. '빌드 번호'를 7번 눌러 켠 뒤, 위 버튼을 다시 누르세요."); return; }
+        if (!launch(new Intent(Settings.ACTION_SETTINGS))) log("설정 화면을 열 수 없습니다.");
     }
 
     private void log(final String s) {
