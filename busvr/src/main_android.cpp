@@ -132,6 +132,31 @@ void platformMonitorClose() {
     static jmethodID m = jmid(j.env, "monitorClose", "()V");
     if (m) { j.env->CallVoidMethod(gApp->activity->clazz, m); j.ok("monitorClose"); }
 }
+int platformHelperStatus(std::string& message) {
+    Jni j; if (!j.env) return HS_IDLE;
+    static jmethodID m = jmid(j.env, "helperStatus", "()Ljava/lang/String;");
+    if (!m) return HS_IDLE;
+    jstring js = (jstring)j.env->CallObjectMethod(gApp->activity->clazz, m);
+    if (!j.ok("helperStatus") || !js) return HS_IDLE;
+    const char* c = j.env->GetStringUTFChars(js, nullptr); std::string r = c ? c : ""; if (c) j.env->ReleaseStringUTFChars(js, c);
+    j.env->DeleteLocalRef(js);
+    size_t t = r.find('\t'); std::string st = r.substr(0, t); message = t == std::string::npos ? "" : r.substr(t + 1);
+    if (st == "ok") return HS_OK;
+    if (st == "starting") return HS_STARTING;
+    if (st == "failed") return HS_FAILED;
+    if (st == "setup") return HS_SETUP;
+    return HS_IDLE;
+}
+void platformHelperAutoStart() {
+    Jni j; if (!j.env) return;
+    static jmethodID m = jmid(j.env, "helperAutoStart", "()V");
+    if (m) { j.env->CallVoidMethod(gApp->activity->clazz, m); j.ok("helperAutoStart"); }
+}
+void platformOpenSetup() {
+    Jni j; if (!j.env) return;
+    static jmethodID m = jmid(j.env, "openSetup", "()V");
+    if (m) { j.env->CallVoidMethod(gApp->activity->clazz, m); j.ok("openSetup"); }
+}
 bool platformMonitorUpdate(float out[16]) {
     Jni j; if (!j.env) return false;
     static jmethodID m = jmid(j.env, "monitorUpdate", "([F)Z");

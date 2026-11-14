@@ -16,7 +16,7 @@ Vec3 monN() { return Vec3(0, sinf(kTilt), cosf(kTilt)); }
 // (u, v): u 0..1 left to right, v 0..1 bottom to top of the picture; v < 0 is the button bar under it
 Vec3 monP(float u, float v, float lift = 0) { return kMonC + kRight * ((u - 0.5f) * kMonW) + monUp() * ((v - 0.5f) * kMonH) + monN() * lift; }
 const float kBarV = -kBarH / kMonH;
-enum { M_BACK = 1, M_HOME, M_CLOSE, M_PREV, M_NEXT, M_FILTER, M_HELP, M_HELPBACK, M_QUEST, M_APP0 = 100 };
+enum { M_BACK = 1, M_HOME, M_CLOSE, M_PREV, M_NEXT, M_FILTER, M_HELP, M_HELPBACK, M_QUEST, M_SETUP, M_RETRY, M_APP0 = 100 };
 const int kCols = 5, kRows = 2, kPer = kCols * kRows;
 const char* kHelperCmd = "adb shell sh /sdcard/Android/data/kr.busvr.seoulbusan/files/start.sh";
 
@@ -86,7 +86,7 @@ std::vector<int> App::monApps() const {
 void App::monOpenApp(int ai) {
     if (ai < 0 || ai >= (int)apps.size()) return;
     monPick = ai;
-    if (monHelper != 1) { monMode = 2; return; }
+    if (monHelper != 1) { monMode = 2; if (monHS == HS_FAILED || monHS == HS_IDLE) { platformHelperAutoStart(); monAutoT = timeSec; } return; }
     if (monDisplay < 0) monDisplay = platformMonitorOpen(monTex, kPixW, kPixH, kDpi);
     if (monDisplay < 0) { monNote = "모니터 화면을 만들지 못했습니다. 도우미를 다시 켜 주세요."; monNoteUntil = timeSec + 8; monMode = 2; return; }
     std::string pkg = apps[ai].pkg;
@@ -109,6 +109,8 @@ void App::monClick(int id) {
         case M_HELP: monMode = 2; break;
         case M_HELPBACK: monMode = 0; break;
         case M_QUEST: if (monPick >= 0) openOtherApp(monPick); monMode = 0; break;
+        case M_SETUP: platformOpenSetup(); break;
+        case M_RETRY: platformHelperAutoStart(); monAutoT = timeSec; monHS = HS_STARTING; break;
         default: if (id >= M_APP0) monOpenApp(id - M_APP0); break;
     }
 }
@@ -124,6 +126,11 @@ void App::monTick() {
         }
         if (h == 1 && monHelper != 1 && monMode == 2) monMode = 0;
         monHelper = h;
+        monHS = platformHelperStatus(monHSMsg);
+        // switch the helper on by ourselves (no PC): right away, then retry now and then if it failed
+        if (h != 1 && (monHS == HS_IDLE || monHS == HS_FAILED) && timeSec - monAutoT > (monHS == HS_FAILED ? 90.0 : 2.0)) {
+            monAutoT = timeSec; platformHelperAutoStart();
+        }
     }
     if (monShown && phase == PH_RIDE) requestApps();
     if (monMode == 1 && monDisplay >= 0) monFrame = platformMonitorUpdate(monMat);
@@ -195,24 +202,37 @@ void App::monBuild() {
         if (!monFrame) { rect(0, 0, 1, 1, 0x05080e, 255, 0.001f); text("앱을 여는 중…", 0.5f, 0.48f, 0.02f, 0xc9d4e6, 1); }
     } else if (monMode == 2) {
         rect(0, 0, 1, 1, 0x0b1424, 255, 0.001f);
-        text("이 모니터에서 APK를 쓰려면", 0.04f, 0.87f, 0.020f, 0xffffff);
-        text("헤드셋을 켤 때마다 한 번, PC(또는 SideQuest의 ADB 명령)에서 이것을 실행하세요:", 0.04f, 0.77f, fit("헤드셋을 켤 때마다 한 번, PC(또는 SideQuest의 ADB 명령)에서 이것을 실행하세요:", 0.0115f, 0.92f), 0xc9d4e6);
-        rect(0.03f, 0.60f, 0.97f, 0.72f, 0x1e2a3e, 255, 0.002f);
-        text(kHelperCmd, 0.5f, 0.645f, fit(kHelperCmd, 0.0125f, 0.9f), 0xffd27a, 1);
-        text("1. 헤드셋을 USB로 PC에 연결합니다 (개발자 모드, USB 디버깅 허용).", 0.04f, 0.50f, 0.0105f, 0xb9c8e0);
-        text("2. 위 명령을 실행해 'OK: seat monitor helper is running'이 나오면 끝입니다. 케이블은 빼도 됩니다.", 0.04f, 0.43f, fit("2. 위 명령을 실행해 'OK: seat monitor helper is running'이 나오면 끝입니다. 케이블은 빼도 됩니다.", 0.0105f, 0.92f), 0xb9c8e0);
-        text("3. 몇 초 뒤 이 화면 위쪽이 'APK 실행 준비됨'으로 바뀝니다.", 0.04f, 0.36f, 0.0105f, 0xb9c8e0);
-        text("VR 전용 앱은 모니터에 띄울 수 없고, 글자 입력은 아직 안 됩니다.", 0.04f, 0.28f, 0.0100f, 0x8f9db5);
-        snprintf(buf, sizeof(buf), "모니터 도우미: %s", monHelper == 1 ? "연결됨" : "꺼짐");
-        text(buf, 0.04f, 0.20f, 0.012f, monHelper == 1 ? 0x58e06a : 0xffb020);
+        if (monHS == HS_SETUP) {
+            text("이 모니터에서 APK를 쓰려면 (처음 한 번만)", 0.04f, 0.87f, 0.019f, 0xffffff);
+            text("헤드셋 안에서 한 번만 연결을 허락해 두면, 다음부터는 버스 앱이 혼자 모니터를 켭니다. PC는 필요 없습니다.", 0.04f, 0.785f, fit("헤드셋 안에서 한 번만 연결을 허락해 두면, 다음부터는 버스 앱이 혼자 모니터를 켭니다. PC는 필요 없습니다.", 0.0112f, 0.92f), 0xc9d4e6);
+            text("1. 아래 '설정 열기'를 누르면 설정 창 두 개가 열립니다 (잠깐 버스 밖 화면).", 0.04f, 0.70f, 0.0105f, 0xb9c8e0);
+            text("2. 설정에서 '무선 디버깅'을 켜고 '페어링 코드로 기기 페어링'을 누릅니다.", 0.04f, 0.63f, 0.0105f, 0xb9c8e0);
+            text("3. 나온 6자리 숫자를 '좌석 모니터 설정' 창에 넣고 '연결하기' → '버스로 돌아가기'.", 0.04f, 0.56f, 0.0105f, 0xb9c8e0);
+            text("Wi-Fi가 켜져 있어야 합니다. 이 과정은 다시 할 필요가 없습니다.", 0.04f, 0.49f, 0.0100f, 0x8f9db5);
+            button(M_SETUP, 0.04f, 0.31f, 0.60f, 0.43f, "설정 열기 (처음 한 번)", 0.016f, 0x2f6f4a);
+            text("PC가 있으면 대신:", 0.64f, 0.385f, 0.0085f, 0x8f9db5);
+            text("adb shell sh /sdcard/Android/", 0.64f, 0.355f, 0.0075f, 0x8f9db5);
+            text("data/kr.busvr.seoulbusan/files/start.sh", 0.64f, 0.33f, 0.0075f, 0x8f9db5);
+        } else {
+            text(monHS == HS_STARTING ? "모니터 도우미를 켜는 중…" : "모니터 도우미를 켜지 못했습니다", 0.04f, 0.87f, 0.019f, 0xffffff);
+            std::string msg = monHSMsg.empty() ? std::string("잠시 기다려 주세요.") : monHSMsg;
+            text(msg, 0.04f, 0.77f, fit(msg, 0.0120f, 0.92f), monHS == HS_FAILED ? 0xffb020 : 0xc9d4e6);
+            text("버스 앱이 헤드셋의 무선 디버깅에 잠깐 연결해 도우미를 켭니다. Wi-Fi가 켜져 있어야 합니다.", 0.04f, 0.66f, fit("버스 앱이 헤드셋의 무선 디버깅에 잠깐 연결해 도우미를 켭니다. Wi-Fi가 켜져 있어야 합니다.", 0.0105f, 0.92f), 0xb9c8e0);
+            if (monHS == HS_FAILED) {
+                button(M_RETRY, 0.04f, 0.42f, 0.48f, 0.54f, "다시 시도", 0.016f, 0x2f6f4a);
+                button(M_SETUP, 0.52f, 0.42f, 0.96f, 0.54f, "처음 설정 다시 하기", 0.014f, 0x35507a);
+            }
+        }
         button(M_HELPBACK, 0.04f, 0.04f, 0.34f, 0.14f, "돌아가기", 0.015f, 0x35507a);
-        if (monPick >= 0) button(M_QUEST, 0.40f, 0.04f, 0.96f, 0.14f, "도우미 없이 Quest 화면에서 열기", 0.013f, 0x2b3b55);
+        if (monPick >= 0) button(M_QUEST, 0.60f, 0.04f, 0.96f, 0.14f, "Quest 화면에서 열기", 0.012f, 0x2b3b55);
     } else {
         // ---- app list
         rect(0, 0, 1, 1, 0x0b1424, 255, 0.001f);
         text("좌석 모니터", 0.03f, 0.885f, 0.019f, 0xffffff);
         if (monHelper == 1) text("● APK 실행 준비됨", 0.97f, 0.89f, 0.011f, 0x58e06a, 2);
-        else button(M_HELP, 0.60f, 0.86f, 0.97f, 0.95f, "도우미 꺼짐 · 켜는 방법", 0.011f, 0x6a4a1c);
+        else if (monHS == HS_STARTING) text("도우미 켜는 중…", 0.97f, 0.89f, 0.011f, 0xffd27a, 2);
+        else if (monHS == HS_SETUP) button(M_HELP, 0.60f, 0.86f, 0.97f, 0.95f, "처음 한 번 설정하기", 0.011f, 0x2f6f4a);
+        else button(M_HELP, 0.60f, 0.86f, 0.97f, 0.95f, "도우미 꺼짐 · 다시 켜기", 0.011f, 0x6a4a1c);
         double rem = remainingSeconds(); double eta = fmod(clockNow() + rem / 3600.0 + 48.0, 24.0); int em = (int)floor(eta * 60.0 + 0.5) % 1440;
         snprintf(buf, sizeof(buf), "%s · 부산까지 %dkm · 도착 예정 %02d:%02d", phase == PH_RIDE ? R.regionAt(s) : "서울", (int)((R.length() - s) / 1000), em / 60, em % 60);
         text(buf, 0.03f, 0.815f, 0.0105f, 0x8fd0ff);

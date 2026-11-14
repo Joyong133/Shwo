@@ -4,7 +4,7 @@ from PIL import Image, ImageDraw, ImageFont
 HERE = os.path.dirname(os.path.abspath(__file__)); OUT = os.path.join(HERE, "..", "assets")
 FONT = "/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc"; PX = 56
 chars = set(chr(c) for c in range(32, 127)) | set("↑↗→←↓↖↘·℃▶◀■□○●※~…–—×㎞’‘“”°")
-for f in glob.glob(os.path.join(HERE, "..", "src", "*.cpp")) + glob.glob(os.path.join(HERE, "..", "src", "*.h")):
+for f in glob.glob(os.path.join(HERE, "..", "src", "*.cpp")) + glob.glob(os.path.join(HERE, "..", "src", "*.h")) + glob.glob(os.path.join(HERE, "..", "android", "app", "src", "main", "java", "kr", "**", "*.java"), recursive=True):
     chars |= set(c for c in open(f, encoding="utf-8").read() if ord(c) > 127)
 try:
     R = pickle.load(open("/opt/data/route.pkl", "rb"))

@@ -18,6 +18,11 @@ bool platformLaunchApp(const std::string& pkg, const std::string& title, const s
 double platformWallClock();                              // seconds since 1970
 // seat monitor: the adb-started helper (SeatHelper.java) runs APKs on a virtual display that draws into our texture
 int platformHelperState();                               // 1 = helper connected
+// starting the helper from inside the headset (Wireless debugging, paired once in SetupActivity)
+enum { HS_IDLE = 0, HS_OK = 1, HS_STARTING = 2, HS_FAILED = 3, HS_SETUP = 4 };
+int platformHelperStatus(std::string& message);          // HS_*
+void platformHelperAutoStart();                          // returns immediately
+void platformOpenSetup();                                // one-time setup panel
 int platformMonitorOpen(unsigned glTexture, int w, int h, int dpi);   // virtual display id, or -1
 bool platformMonitorLaunch(const std::string& pkg);      // slow (restarts the app on the monitor): call from a worker thread
 void platformMonitorTouch(int action, float x, float y); // MotionEvent action: 0 down, 1 up, 2 move

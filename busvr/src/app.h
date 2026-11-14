@@ -90,6 +90,7 @@ struct App {
     float monRayLen[2] = {-1.f, -1.f}; bool monPrevTrig[2] = {false, false};
     Mesh monFrameMesh, monQuad, monBg, monText, monIcons; Shader monShader;
     std::string monNote; double monNoteUntil = 0;
+    int monHS = HS_IDLE; std::string monHSMsg; double monAutoT = -100;
     void monInit();
     void monInput(const AppInput& in);
     void monTick();

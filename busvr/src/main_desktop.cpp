@@ -55,6 +55,14 @@ int platformMonitorOpen(unsigned tex, int w, int h, int) {
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, px.data());
     return 7;
 }
+static int gFakeHS = HS_SETUP;
+int platformHelperStatus(std::string& message) {
+    if (gFakeHelper) return HS_OK;
+    message = gFakeHS == HS_FAILED ? "헤드셋의 무선 디버깅에 연결하지 못했습니다. 처음 설정을 다시 해 주세요." : (gFakeHS == HS_STARTING ? "헤드셋에 연결하는 중…" : "");
+    return gFakeHS;
+}
+void platformHelperAutoStart() {}
+void platformOpenSetup() { LOGI("would open the setup panel"); }
 bool platformMonitorLaunch(const std::string& pkg) { LOGI("monitor: launch %s", pkg.c_str()); return true; }
 void platformMonitorTouch(int a, float x, float y) { LOGI("monitor: touch %d %.0f %.0f", a, x, y); }
 void platformMonitorScroll(float, float, float) {}
@@ -76,7 +84,7 @@ int main(int argc, char** argv) {
         else if (k == "--out") out = v; else if (k == "--w") W = atoi(v); else if (k == "--h") H = atoi(v); else if (k == "--fov") fov = atof(v);
         else if (k == "--month") month = atoi(v); else if (k == "--assets") gAssetDir = v; else if (k == "--frames") frames = atoi(v); else if (k == "--scale") scale = atof(v);
         else if (k == "--ex") ex = atof(v); else if (k == "--ey") ey = atof(v); else if (k == "--ez") ez = atof(v); else if (k == "--cloud") cloud = atof(v);
-        else if (k == "--phase") phase = atoi(v); else if (k == "--seat") seatArg = atoi(v); else if (k == "--bus") busArg = atoi(v); else if (k == "--hud") hudArg = atoi(v); else if (k == "--simulate") simulate = atoi(v); else if (k == "--away") awayMin = atof(v); else if (k == "--apps") appsPage = atoi(v); else if (k == "--helper") gFakeHelper = atoi(v); else if (k == "--monitor") monArg = atoi(v); else if (k == "--menu") menuArg = atoi(v); else if (k == "--both") both = atoi(v);
+        else if (k == "--phase") phase = atoi(v); else if (k == "--seat") seatArg = atoi(v); else if (k == "--bus") busArg = atoi(v); else if (k == "--hud") hudArg = atoi(v); else if (k == "--simulate") simulate = atoi(v); else if (k == "--away") awayMin = atof(v); else if (k == "--apps") appsPage = atoi(v); else if (k == "--helper") gFakeHelper = atoi(v); else if (k == "--hs") gFakeHS = atoi(v); else if (k == "--monitor") monArg = atoi(v); else if (k == "--menu") menuArg = atoi(v); else if (k == "--both") both = atoi(v);
     }
     EGLDisplay dpy = eglGetPlatformDisplay(EGL_PLATFORM_SURFACELESS_MESA, EGL_DEFAULT_DISPLAY, nullptr);
     EGLint ma, mi; if (!eglInitialize(dpy, &ma, &mi)) { LOGE("egl init failed"); return 1; }

@@ -59,27 +59,45 @@ public class BusActivity extends NativeActivity {
         writeHelperScript();
     }
 
-    /** start.sh for the seat-monitor helper; run it from adb once per headset boot. */
-    private void writeHelperScript() {
-        try {
-            File dir = getExternalFilesDir(null);
-            if (dir == null) return;
-            String apk = getApplicationInfo().sourceDir;
-            String sh = "#!/system/bin/sh\n"
-                    + "# Seoul-Busan bus VR: seat-monitor helper. Run once per headset boot:\n"
-                    + "#   adb shell sh /sdcard/Android/data/" + getPackageName() + "/files/start.sh\n"
-                    + "APK=\"" + apk + "\"\n"
-                    + "pkill -f busvr_seat_helper >/dev/null 2>&1\n"
-                    + "if command -v setsid >/dev/null 2>&1; then RUN=setsid; else RUN=; fi\n"
-                    + "CLASSPATH=\"$APK\" $RUN nohup app_process /system/bin --nice-name=busvr_seat_helper kr.busvr.seoulbusan.SeatHelper >/dev/null 2>&1 &\n"
-                    + "sleep 2\n"
-                    + "if pgrep -f busvr_seat_helper >/dev/null 2>&1; then echo 'OK: seat monitor helper is running'; else echo 'FAILED: helper did not start'; fi\n";
-            FileOutputStream out = new FileOutputStream(new File(dir, "start.sh"));
-            out.write(sh.getBytes("UTF-8"));
-            out.close();
-        } catch (Exception e) {
-            Log.w(TAG, "start.sh", e);
-        }
+    private void writeHelperScript() { HelperStarter.writeScript(this); }
+
+    // ------------------------------------------------------------------ starting the helper from inside the headset
+    private volatile String helperState = "idle", helperMsg = "";
+    private volatile boolean helperStarting = false;
+
+    /** Starts the monitor helper in the background (Wireless debugging, paired once). Returns immediately. */
+    public void helperAutoStart() {
+        if (helperStarting || HelperStarter.helperAlive()) return;
+        if (!HelperStarter.isPaired(this)) { helperState = "setup"; return; }
+        helperStarting = true; helperState = "starting"; helperMsg = "모니터 도우미를 켜는 중…";
+        new Thread(new Runnable() {
+            @Override public void run() {
+                boolean ok = HelperStarter.startHelper(BusActivity.this, new HelperStarter.Out() {
+                    @Override public void line(String s) { helperMsg = s; }
+                });
+                helperState = ok ? "ok" : "failed";
+                helperStarting = false;
+            }
+        }, "seat-autostart").start();
+    }
+
+    /** "state\tmessage"; state = ok | starting | failed | setup (pairing still needed) | idle */
+    public String helperStatus() {
+        String st = HelperStarter.helperAlive() ? "ok" : (helperStarting ? "starting" : (HelperStarter.isPaired(this) ? helperState : "setup"));
+        return st + "\t" + helperMsg;
+    }
+
+    /** Opens the one-time setup as a 2D panel. */
+    public void openSetup() {
+        runOnUiThread(new Runnable() {
+            @Override public void run() {
+                try {
+                    startActivity(new Intent(BusActivity.this, SetupActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+                } catch (Exception e) {
+                    Log.e(TAG, "setup", e);
+                }
+            }
+        });
     }
 
     // ------------------------------------------------------------------ seat monitor (talks to SeatHelper)
