@@ -142,7 +142,7 @@
     return o;
   })();
   function saveLook() { try { localStorage.setItem('look', JSON.stringify(look)); } catch (e) { /* ignore */ } }
-  var ui = { guides: true, hair: true, clothes: true, spin: false, playing: false, dir: 1, hold: 0, p: 0, topic: null };
+  var ui = { guides: true, hair: true, clothes: true, touch: false, spin: false, playing: false, dir: 1, hold: 0, p: 0, topic: null };
   var dirtyShape = true, dirtyView = true, raf = 0, lastT = 0, insetTop = 0;
 
   // ───────────── playback settings ─────────────
@@ -446,9 +446,11 @@
   var A_COL = [95, 208, 197], B_COL = [242, 166, 94];
   var TOP_A = [0.13, 0.36, 0.37], TOP_B = [0.72, 0.42, 0.20], BOTTOM_COL = [0.085, 0.10, 0.15];   // garment colours (linear)
   var UNDER_COL = [0.60, 0.27, 0.33];              // bra and briefs, a matching set
+  // rest: the blended shape; cur: rest plus whatever is being pressed or pulled (what is drawn)
+  var rest = new Float32Array(NV * STRIDE);
   function blend() {
     var wS = w.S, wF = w.F, wM = w.M, wR = wS * wF * wM;
-    var dS = deltas[0], dF = deltas[1], dM = deltas[2], dR = deltas[3];
+    var dS = deltas[0], dF = deltas[1], dM = deltas[2], dR = deltas[3], cur = rest;
     for (var i = 0, n = NV * STRIDE; i < n; i++) cur[i] = base[i] + wS * dS[i] + wF * dF[i] + wM * dM[i] + wR * dR[i];
     var e = extraWeights();
     for (var k in e) {
@@ -459,6 +461,214 @@
         cur[o] += we * x.d[q]; cur[o + 1] += we * x.d[q + 1]; cur[o + 2] += we * x.d[q + 2];
         cur[o + 3] += we * x.d[q + 3]; cur[o + 4] += we * x.d[q + 4]; cur[o + 5] += we * x.d[q + 5];
         cur[o + 6] += we * x.d[q + 6];
+      }
+    }
+  }
+
+  // ───────────── touch: press, pull, let go ─────────────
+  // Each finger on the body holds a "dent": the patch of surface around the touched point, found by walking
+  // along the mesh so that pulling the waist does not drag the arm beside it. Held still it presses in (the
+  // flesh around it bulges a little), dragged it pulls along (wider and stiffer the further it goes), and
+  // let go it springs back with a wobble. Clothes follow, since they are drawn from the body surface.
+  var DENT = { radius: 0.055, grow: 0.45, region: 0.26, press: 0.026, pullMax: 0.10, bulge: 0.2, max: 6 };
+  var dents = [], dentsDirty = false;
+  var adj = (function () {                         // neighbours and surrounding triangles of every vertex
+    var nt = indices.length / 3, st = new Int32Array(NV + 1), ts = new Int32Array(NV + 1), t, k;
+    for (t = 0; t < nt; t++) for (k = 0; k < 3; k++) { st[indices[t * 3 + k] + 1] += 2; ts[indices[t * 3 + k] + 1] += 1; }
+    for (k = 0; k < NV; k++) { st[k + 1] += st[k]; ts[k + 1] += ts[k]; }
+    var nb = new Int32Array(st[NV]), tri = new Int32Array(ts[NV]), f1 = st.slice(0, NV), f2 = ts.slice(0, NV);
+    for (t = 0; t < nt; t++) {
+      var a = indices[t * 3], b = indices[t * 3 + 1], c = indices[t * 3 + 2];
+      nb[f1[a]++] = b; nb[f1[a]++] = c; nb[f1[b]++] = a; nb[f1[b]++] = c; nb[f1[c]++] = a; nb[f1[c]++] = b;
+      tri[f2[a]++] = t; tri[f2[b]++] = t; tri[f2[c]++] = t;
+    }
+    return { start: st, nb: nb, tstart: ts, tri: tri };
+  })();
+  // (double precision: a distance rounded on storing would no longer match the one queued, and the walk would stop early)
+  var gdist = new Float64Array(NV).fill(Infinity), stamp = new Int32Array(NV), stampN = 0;
+
+  // surface distance from the touched point to every vertex within maxD (Dijkstra along mesh edges)
+  function region(tri, hit, maxD) {
+    var hv = [], hd = [], touched = [], k, v, d;
+    var push = function (vv, dd) {
+      var i = hv.length; hv.push(vv); hd.push(dd);
+      while (i > 0) { var p = (i - 1) >> 1; if (hd[p] <= dd) break; hv[i] = hv[p]; hd[i] = hd[p]; i = p; }
+      hv[i] = vv; hd[i] = dd;
+    };
+    var pop = function () {
+      v = hv[0]; d = hd[0];
+      var lv = hv.pop(), ld = hd.pop(), n = hv.length, i = 0;
+      if (!n) return;
+      for (;;) {
+        var l = 2 * i + 1, r = l + 1, m = -1, md = ld;
+        if (l < n && hd[l] < md) { m = l; md = hd[l]; }
+        if (r < n && hd[r] < md) { m = r; md = hd[r]; }
+        if (m < 0) break;
+        hv[i] = hv[m]; hd[i] = hd[m]; i = m;
+      }
+      hv[i] = lv; hd[i] = ld;
+    };
+    var len = function (a, b) { var x = rest[a] - rest[b], y = rest[a + 1] - rest[b + 1], z = rest[a + 2] - rest[b + 2]; return Math.sqrt(x * x + y * y + z * z); };
+    for (k = 0; k < 3; k++) {
+      var sv = indices[tri * 3 + k], o = sv * STRIDE;
+      var sd = Math.sqrt((rest[o] - hit[0]) * (rest[o] - hit[0]) + (rest[o + 1] - hit[1]) * (rest[o + 1] - hit[1]) + (rest[o + 2] - hit[2]) * (rest[o + 2] - hit[2]));
+      if (sd < gdist[sv]) { if (gdist[sv] === Infinity) touched.push(sv); gdist[sv] = sd; push(sv, sd); }
+    }
+    while (hv.length) {
+      pop();
+      if (d > gdist[v]) continue;
+      for (k = adj.start[v]; k < adj.start[v + 1]; k++) {
+        var u = adj.nb[k], nd = d + len(u * STRIDE, v * STRIDE);
+        if (nd < gdist[u] && nd <= maxD) { if (gdist[u] === Infinity) touched.push(u); gdist[u] = nd; push(u, nd); }
+      }
+    }
+    var verts = new Int32Array(touched.length), dist = new Float32Array(touched.length);
+    for (k = 0; k < touched.length; k++) { verts[k] = touched[k]; dist[k] = gdist[touched[k]]; gdist[touched[k]] = Infinity; }
+    return { verts: verts, dist: dist };
+  }
+
+  var INV = new Float32Array(16);
+  function invert4(m, out) {
+    var a00 = m[0], a01 = m[1], a02 = m[2], a03 = m[3], a10 = m[4], a11 = m[5], a12 = m[6], a13 = m[7];
+    var a20 = m[8], a21 = m[9], a22 = m[10], a23 = m[11], a30 = m[12], a31 = m[13], a32 = m[14], a33 = m[15];
+    var b00 = a00 * a11 - a01 * a10, b01 = a00 * a12 - a02 * a10, b02 = a00 * a13 - a03 * a10, b03 = a01 * a12 - a02 * a11;
+    var b04 = a01 * a13 - a03 * a11, b05 = a02 * a13 - a03 * a12, b06 = a20 * a31 - a21 * a30, b07 = a20 * a32 - a22 * a30;
+    var b08 = a20 * a33 - a23 * a30, b09 = a21 * a32 - a22 * a31, b10 = a21 * a33 - a23 * a31, b11 = a22 * a33 - a23 * a32;
+    var det = b00 * b11 - b01 * b10 + b02 * b09 + b03 * b08 - b04 * b07 + b05 * b06;
+    if (!det) return false;
+    det = 1 / det;
+    out[0] = (a11 * b11 - a12 * b10 + a13 * b09) * det; out[1] = (a02 * b10 - a01 * b11 - a03 * b09) * det;
+    out[2] = (a31 * b05 - a32 * b04 + a33 * b03) * det; out[3] = (a22 * b04 - a21 * b05 - a23 * b03) * det;
+    out[4] = (a12 * b08 - a10 * b11 - a13 * b07) * det; out[5] = (a00 * b11 - a02 * b08 + a03 * b07) * det;
+    out[6] = (a32 * b02 - a30 * b05 - a33 * b01) * det; out[7] = (a20 * b05 - a22 * b02 + a23 * b01) * det;
+    out[8] = (a10 * b10 - a11 * b08 + a13 * b06) * det; out[9] = (a01 * b08 - a00 * b10 - a03 * b06) * det;
+    out[10] = (a30 * b04 - a31 * b02 + a33 * b00) * det; out[11] = (a21 * b02 - a20 * b04 - a23 * b00) * det;
+    out[12] = (a11 * b07 - a10 * b09 - a12 * b06) * det; out[13] = (a00 * b09 - a01 * b07 + a02 * b06) * det;
+    out[14] = (a31 * b01 - a30 * b03 - a32 * b00) * det; out[15] = (a20 * b03 - a21 * b01 + a22 * b00) * det;
+    return true;
+  }
+  // the ray under a point on the screen (client coordinates), in world space
+  function screenRay(cx, cy) {
+    var r = glCanvas.getBoundingClientRect(), nx = (cx - r.left) / r.width * 2 - 1, ny = 1 - (cy - r.top) / r.height * 2;
+    invert4(VP, INV);
+    var at = function (z) {
+      var ww = INV[3] * nx + INV[7] * ny + INV[11] * z + INV[15];
+      return [(INV[0] * nx + INV[4] * ny + INV[8] * z + INV[12]) / ww, (INV[1] * nx + INV[5] * ny + INV[9] * z + INV[13]) / ww, (INV[2] * nx + INV[6] * ny + INV[10] * z + INV[14]) / ww];
+    };
+    var a = at(-1), b = at(1), dx = b[0] - a[0], dy = b[1] - a[1], dz = b[2] - a[2], l = Math.sqrt(dx * dx + dy * dy + dz * dz);
+    return { o: a, d: [dx / l, dy / l, dz / l] };
+  }
+  // nearest triangle the ray passes through (Möller–Trumbore)
+  function rayHit(ray, pos, idx) {
+    var ox = ray.o[0], oy = ray.o[1], oz = ray.o[2], dx = ray.d[0], dy = ray.d[1], dz = ray.d[2], best = Infinity, bt = -1, bu = 0, bv = 0;
+    for (var t = 0, n = idx.length; t < n; t += 3) {
+      var a = idx[t] * STRIDE, b = idx[t + 1] * STRIDE, c = idx[t + 2] * STRIDE;
+      var ax = pos[a], ay = pos[a + 1], az = pos[a + 2];
+      var e1x = pos[b] - ax, e1y = pos[b + 1] - ay, e1z = pos[b + 2] - az, e2x = pos[c] - ax, e2y = pos[c + 1] - ay, e2z = pos[c + 2] - az;
+      var px = dy * e2z - dz * e2y, py = dz * e2x - dx * e2z, pz = dx * e2y - dy * e2x, det = e1x * px + e1y * py + e1z * pz;
+      if (det > -1e-12 && det < 1e-12) continue;
+      var inv = 1 / det, tx = ox - ax, ty = oy - ay, tz = oz - az, u = (tx * px + ty * py + tz * pz) * inv;
+      if (u < 0 || u > 1) continue;
+      var qx = ty * e1z - tz * e1y, qy = tz * e1x - tx * e1z, qz = tx * e1y - ty * e1x, v = (dx * qx + dy * qy + dz * qz) * inv;
+      if (v < 0 || u + v > 1) continue;
+      var dist = (e2x * qx + e2y * qy + e2z * qz) * inv;
+      if (dist > 1e-4 && dist < best) { best = dist; bt = t / 3; bu = u; bv = v; }
+    }
+    return bt < 0 ? null : { t: best, tri: bt, u: bu, v: bv };
+  }
+  function haptic() {
+    try { if (window.AndroidShell && window.AndroidShell.tick) window.AndroidShell.tick(); else if (navigator.vibrate) navigator.vibrate(10); } catch (e) { /* no haptics */ }
+  }
+  // put a finger on the body: returns false when the ray misses it (or the hair is in front)
+  function grab(id, cx, cy) {
+    if (dents.length >= DENT.max) return false;
+    var ray = screenRay(cx, cy), hb = rayHit(ray, cur, indices);
+    if (!hb) return false;
+    if (ui.hair) { var h = hairSets[look.hair], hh = rayHit(ray, h.cur, h.idx); if (hh && hh.t < hb.t - 0.002) return false; }
+    var hit = [ray.o[0] + ray.d[0] * hb.t, ray.o[1] + ray.d[1] * hb.t, ray.o[2] + ray.d[2] * hb.t];
+    var t3 = hb.tri * 3, bw = [1 - hb.u - hb.v, hb.u, hb.v], ci = bw[0] >= bw[1] && bw[0] >= bw[2] ? 0 : bw[1] >= bw[2] ? 1 : 2;
+    var nx = 0, ny = 0, nz = 0;
+    for (var k = 0; k < 3; k++) { var o = indices[t3 + k] * STRIDE; nx += bw[k] * rest[o + 3]; ny += bw[k] * rest[o + 4]; nz += bw[k] * rest[o + 5]; }
+    var nl = Math.sqrt(nx * nx + ny * ny + nz * nz) || 1, reg = region(hb.tri, hit, DENT.region);
+    dents.push({ id: id, verts: reg.verts, dist: reg.dist, centre: indices[t3 + ci], n0: [nx / nl, ny / nl, nz / nl],
+      d: [0, 0, 0], v: [0, 0, 0], held: true, t: 0, moved: false, sx: cx, sy: cy, cx: cx, cy: cy });
+    haptic();
+    return true;
+  }
+  function dentOf(id) { for (var i = 0; i < dents.length; i++) if (dents[i].id === id) return dents[i]; return null; }
+  function release(id) { var k = dentOf(id); if (k) { k.held = false; k.id = null; } }
+  // where a screen point lands on the plane that faces the camera through the dent's centre
+  function planePoint(k, cx, cy) {
+    var cp = Math.cos(view.pitch), fx = -Math.sin(view.yaw) * cp, fy = -Math.sin(view.pitch), fz = -Math.cos(view.yaw) * cp;
+    var o = k.centre * STRIDE, ray = screenRay(cx, cy);
+    var t = ((rest[o] - ray.o[0]) * fx + (rest[o + 1] - ray.o[1]) * fy + (rest[o + 2] - ray.o[2]) * fz) / (ray.d[0] * fx + ray.d[1] * fy + ray.d[2] * fz);
+    return [ray.o[0] + ray.d[0] * t, ray.o[1] + ray.d[1] * t, ray.o[2] + ray.d[2] * t];
+  }
+  // springs: firm and well damped while held (it follows the finger), soft and bouncy once let go
+  function stepDents(dt) {
+    var TAU = Math.PI * 2;
+    for (var i = dents.length - 1; i >= 0; i--) {
+      var k = dents[i], tg = [0, 0, 0], om, ze, c;
+      if (k.held) {
+        k.t += dt;
+        if (k.moved) {
+          var a = planePoint(k, k.sx, k.sy), b = planePoint(k, k.cx, k.cy), px = b[0] - a[0], py = b[1] - a[1], pz = b[2] - a[2];
+          var l = Math.sqrt(px * px + py * py + pz * pz);
+          if (l > 1e-9) { var sc = DENT.pullMax * Math.tanh(l / DENT.pullMax) / l; tg = [px * sc, py * sc, pz * sc]; }
+        } else {
+          var depth = DENT.press * (1 - Math.exp(-k.t / 0.16));
+          tg = [-k.n0[0] * depth, -k.n0[1] * depth, -k.n0[2] * depth];
+        }
+        om = TAU * 8; ze = 0.9;
+      } else { om = TAU * 3.2; ze = 0.16; }
+      var n = Math.max(1, Math.ceil(dt * 240)), h = dt / n;
+      for (var s = 0; s < n; s++) for (c = 0; c < 3; c++) {
+        k.v[c] += (om * om * (tg[c] - k.d[c]) - 2 * ze * om * k.v[c]) * h;
+        k.d[c] += k.v[c] * h;
+      }
+      if (!k.held && Math.abs(k.d[0]) + Math.abs(k.d[1]) + Math.abs(k.d[2]) < 2e-4 && Math.abs(k.v[0]) + Math.abs(k.v[1]) + Math.abs(k.v[2]) < 4e-3) {
+        dents.splice(i, 1); dentsDirty = true;
+      }
+    }
+  }
+  // the shape that is drawn: rest, moved by every dent, with fresh normals where it moved
+  function composeBody() {
+    cur.set(rest);
+    if (dents.length) {
+      var moved = [], i, j, o;
+      stampN++;
+      for (var di = 0; di < dents.length; di++) {
+        var k = dents[di], dx = k.d[0], dy = k.d[1], dz = k.d[2], n0 = k.n0;
+        var dn = dx * n0[0] + dy * n0[1] + dz * n0[2], tx = dx - dn * n0[0], ty = dy - dn * n0[1], tz = dz - dn * n0[2];
+        var R = DENT.radius + DENT.grow * Math.sqrt(dx * dx + dy * dy + dz * dz), invR = 1 / R, e0 = DENT.region * 0.72, e1 = DENT.region;
+        for (j = 0; j < k.verts.length; j++) {
+          i = k.verts[j];
+          var g = k.dist[j], q2 = g * invR * g * invR, fade = 1;
+          if (g > e0) { var f = (g - e0) / (e1 - e0); fade = f >= 1 ? 0 : 1 - f * f * (3 - 2 * f); }
+          var wv = Math.exp(-q2) * fade;
+          // the part along the surface normal follows each vertex's own normal, so dents stay round on curved
+          // surfaces; pressing in pushes a little flesh up around the dent
+          var nPart = dn < 0 ? dn * (wv - DENT.bulge * Math.exp(-q2 / 2.56) * q2 * fade) : dn * wv;
+          o = i * STRIDE;
+          cur[o] += wv * tx + nPart * rest[o + 3]; cur[o + 1] += wv * ty + nPart * rest[o + 4]; cur[o + 2] += wv * tz + nPart * rest[o + 5];
+          if (nPart < 0) cur[o + 6] *= 1 - Math.min(0.45, -nPart * 13);   // the bottom of a dent sits in its own shade
+          if (stamp[i] !== stampN) { stamp[i] = stampN; moved.push(i); }
+        }
+      }
+      for (j = 0; j < moved.length; j++) {             // normal: rest normal turned by how much the faces around it turned
+        i = moved[j];
+        var ax = 0, ay = 0, az = 0, bx = 0, by = 0, bz = 0;
+        for (var tk = adj.tstart[i]; tk < adj.tstart[i + 1]; tk++) {
+          var t3 = adj.tri[tk] * 3, a = indices[t3] * STRIDE, b = indices[t3 + 1] * STRIDE, c2 = indices[t3 + 2] * STRIDE;
+          var u1 = cur[b] - cur[a], u2 = cur[b + 1] - cur[a + 1], u3 = cur[b + 2] - cur[a + 2], w1 = cur[c2] - cur[a], w2 = cur[c2 + 1] - cur[a + 1], w3 = cur[c2 + 2] - cur[a + 2];
+          ax += u2 * w3 - u3 * w2; ay += u3 * w1 - u1 * w3; az += u1 * w2 - u2 * w1;
+          u1 = rest[b] - rest[a]; u2 = rest[b + 1] - rest[a + 1]; u3 = rest[b + 2] - rest[a + 2]; w1 = rest[c2] - rest[a]; w2 = rest[c2 + 1] - rest[a + 1]; w3 = rest[c2 + 2] - rest[a + 2];
+          bx += u2 * w3 - u3 * w2; by += u3 * w1 - u1 * w3; bz += u1 * w2 - u2 * w1;
+        }
+        var la = Math.sqrt(ax * ax + ay * ay + az * az) || 1, lb = Math.sqrt(bx * bx + by * by + bz * bz) || 1;
+        o = i * STRIDE;
+        var nx = rest[o + 3] + ax / la - bx / lb, ny = rest[o + 4] + ay / la - by / lb, nz = rest[o + 5] + az / la - bz / lb, nl = Math.sqrt(nx * nx + ny * ny + nz * nz) || 1;
+        cur[o + 3] = nx / nl; cur[o + 4] = ny / nl; cur[o + 5] = nz / nl;
       }
     }
     gl.bindBuffer(gl.ARRAY_BUFFER, vbo); gl.bufferSubData(gl.ARRAY_BUFFER, 0, cur);
@@ -661,6 +871,14 @@
   function drawOverlay() {
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, cssW, cssH);
+    for (var di = 0; di < dents.length; di++) {
+      var dk = dents[di];
+      if (!dk.held) continue;
+      var co = dk.centre * STRIDE, sp = toScreen(cur[co], cur[co + 1], cur[co + 2]);
+      ctx.beginPath(); ctx.arc(sp[0], sp[1], 15, 0, Math.PI * 2);
+      ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(255,196,107,.9)'; ctx.stroke();
+      ctx.beginPath(); ctx.arc(sp[0], sp[1], 3, 0, Math.PI * 2); ctx.fillStyle = 'rgba(255,196,107,.95)'; ctx.fill();
+    }
     if (!ui.guides) return;
     var cy = Math.cos(view.yaw), sy = Math.sin(view.yaw);
     var side = function (off, y) { return toScreen(off * cy, y, -off * sy); };   // a point beside the figure, facing the camera
@@ -876,6 +1094,12 @@
     syncLook();
     $('btnGuides').addEventListener('click', function (e) { ui.guides = !ui.guides; e.currentTarget.setAttribute('aria-pressed', String(ui.guides)); dirtyView = true; kick(); });
     $('btnHair').addEventListener('click', function (e) { ui.hair = !ui.hair; e.currentTarget.setAttribute('aria-pressed', String(ui.hair)); dirtyView = true; kick(); });
+    $('btnTouch').addEventListener('click', function (e) {
+      ui.touch = !ui.touch; e.currentTarget.setAttribute('aria-pressed', String(ui.touch));
+      glCanvas.classList.toggle('touching', ui.touch);
+      $('hint').textContent = ui.touch ? '몸을 누르거나 끌어 보세요 · 빈 곳을 끌면 돌아갑니다' : '드래그해서 돌려 보세요';
+      $('hint').classList.remove('gone');
+    });
     $('btnClothes').addEventListener('click', function (e) { ui.clothes = !ui.clothes; e.currentTarget.setAttribute('aria-pressed', String(ui.clothes)); dirtyShape = true; kick(); });
     $('btnSpin').addEventListener('click', function (e) { ui.spin = !ui.spin; e.currentTarget.setAttribute('aria-pressed', String(ui.spin)); kick(); });
     $('btnFront').addEventListener('click', function () { ui.spin = false; $('btnSpin').setAttribute('aria-pressed', 'false'); view.yaw = 0; view.pitch = 0.04; view.zoom = 1; view.panY = 0; dirtyView = true; kick(); });
@@ -904,7 +1128,12 @@
     var pts = {}, lastTap = 0, pinch = null;
     var count = function () { return Object.keys(pts).length; };
     glCanvas.addEventListener('pointerdown', function (e) {
-      glCanvas.setPointerCapture(e.pointerId);
+      try { glCanvas.setPointerCapture(e.pointerId); } catch (err) { /* pointer already gone */ }
+      if (ui.touch && gl && grab(e.pointerId, e.clientX, e.clientY)) {     // a finger on the body presses and pulls it
+        if (ui.spin) { ui.spin = false; $('btnSpin').setAttribute('aria-pressed', 'false'); }
+        $('hint').classList.add('gone');
+        kick(); return;
+      }
       pts[e.pointerId] = [e.clientX, e.clientY];
       pinch = null;
       if (count() === 1) {
@@ -914,6 +1143,12 @@
       }
     });
     glCanvas.addEventListener('pointermove', function (e) {
+      var k = dentOf(e.pointerId);
+      if (k) {
+        k.cx = e.clientX; k.cy = e.clientY;
+        if (!k.moved && Math.abs(k.cx - k.sx) + Math.abs(k.cy - k.sy) > 8) k.moved = true;
+        kick(); return;
+      }
       var p = pts[e.pointerId]; if (!p) return;
       var dx = e.clientX - p[0], dy = e.clientY - p[1];
       p[0] = e.clientX; p[1] = e.clientY;
@@ -932,7 +1167,7 @@
       }
       dirtyView = true; kick();
     });
-    var up = function (e) { delete pts[e.pointerId]; pinch = null; };
+    var up = function (e) { release(e.pointerId); delete pts[e.pointerId]; pinch = null; kick(); };
     glCanvas.addEventListener('pointerup', up); glCanvas.addEventListener('pointercancel', up);
     glCanvas.addEventListener('wheel', function (e) { e.preventDefault(); view.zoom = Math.max(0.8, Math.min(3, view.zoom * Math.exp(-e.deltaY * 0.0012))); dirtyView = true; kick(); }, { passive: false });
 
@@ -972,10 +1207,13 @@
     if (ui.spin) { view.yaw += dt * 0.45; dirtyView = true; again = true; }
     if (Math.abs(hiAmt - hiTarget) > 0.004) { hiAmt += (hiTarget - hiAmt) * Math.min(1, dt * 9); dirtyView = true; again = true; } else if (hiAmt !== hiTarget) { hiAmt = hiTarget; dirtyView = true; }
 
-    if (gl && (dirtyShape || dirtyView)) {
-      if (dirtyShape) { blend(); blendHair(); buildSkirt(); syncUI(); }
+    var denting = dents.length > 0;
+    if (denting) { stepDents(Math.min(raw, 0.25)); again = true; }   // springs follow the clock too (in small steps)
+    if (gl && (dirtyShape || dirtyView || denting || dentsDirty)) {
+      if (dirtyShape) { blend(); blendHair(); syncUI(); }
+      if (dirtyShape || denting || dentsDirty) { composeBody(); buildSkirt(); }
       updateCamera(); drawGL(); drawOverlay();
-      dirtyShape = dirtyView = false;
+      dirtyShape = dirtyView = dentsDirty = false;
     }
     if (again) kick(); else lastT = 0;
   }
@@ -1009,6 +1247,19 @@
     topic: setTopic,
     play: function (o) { setPlay(o); },
     look: function (o) { setLook(o); },
+    touch: {
+      on: function (v) { if (ui.touch !== !!v) $('btnTouch').click(); },
+      nearest: function (p) {                    // vertex nearest a point, on the shape as drawn
+        var bi = 0, bd = Infinity;
+        for (var i = 0; i < NV; i++) { var o = i * STRIDE, x = cur[o] - p[0], y = cur[o + 1] - p[1], z = cur[o + 2] - p[2], d = x * x + y * y + z * z; if (d < bd) { bd = d; bi = i; } }
+        return bi;
+      },
+      screen: function (i) { var o = i * STRIDE, s = toScreen(cur[o], cur[o + 1], cur[o + 2]), r = glCanvas.getBoundingClientRect(); return [r.left + s[0], r.top + s[1]]; },
+      pos: function (i) { var o = i * STRIDE; return { cur: [cur[o], cur[o + 1], cur[o + 2]], rest: [rest[o], rest[o + 1], rest[o + 2]], n: [rest[o + 3], rest[o + 4], rest[o + 5]] }; },
+      count: function () { return dents.length; },
+      state: function () { return dents.map(function (k) { return { id: k.id, held: k.held, moved: k.moved, d: k.d.map(function (x) { return +x.toFixed(5); }), v: k.v.map(function (x) { return +x.toFixed(5); }) }; }); },
+      timePick: function (cx, cy) { var t0 = performance.now(), r = rayHit(screenRay(cx, cy), cur, indices); return { ms: performance.now() - t0, hit: !!r }; }
+    },
     get: function () { return { w: { S: w.S, F: w.F, M: w.M, K: w.K }, hair: ui.hair, clothes: ui.clothes, skirt: skirtOn, ext: { B: ext.B, W: ext.W, H: ext.H }, view: { yaw: view.yaw, pitch: view.pitch, zoom: view.zoom }, playing: ui.playing, p: ui.p, dir: ui.dir, settings: { dur: play.dur, ease: play.ease, loop: play.loop, hold: play.hold }, look: { hair: look.hair, outfit: look.outfit }, guides: ui.guides, spin: ui.spin, topic: ui.topic }; }
   };
 })();

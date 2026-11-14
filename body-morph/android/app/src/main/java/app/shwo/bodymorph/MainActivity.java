@@ -5,10 +5,12 @@ import android.graphics.Color;
 import android.graphics.Insets;
 import android.os.Build;
 import android.os.Bundle;
+import android.view.HapticFeedbackConstants;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.Window;
 import android.view.WindowInsets;
+import android.webkit.JavascriptInterface;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
@@ -68,6 +70,15 @@ public class MainActivity extends Activity {
                 pushInsets();
             }
         });
+
+        // a light tick when a finger takes hold of the figure (the system touch feedback: no permission needed);
+        // only the bundled page can call it, since nothing else is ever loaded
+        web.addJavascriptInterface(new Object() {
+            @JavascriptInterface
+            public void tick() {
+                web.post(() -> web.performHapticFeedback(HapticFeedbackConstants.CONTEXT_CLICK));
+            }
+        }, "AndroidShell");
 
         web.setOnApplyWindowInsetsListener((v, insets) -> {
             if (Build.VERSION.SDK_INT >= 30) {
