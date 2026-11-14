@@ -7,7 +7,7 @@ find_package(OpenXR REQUIRED CONFIG)
 add_library(native_app_glue STATIC ${ANDROID_NDK}/sources/android/native_app_glue/android_native_app_glue.c)
 target_include_directories(native_app_glue PUBLIC ${ANDROID_NDK}/sources/android/native_app_glue)
 
-file(GLOB APP_SOURCES ${SRC}/*.cpp)
+file(GLOB APP_SOURCES CONFIGURE_DEPENDS ${SRC}/*.cpp)
 list(FILTER APP_SOURCES EXCLUDE REGEX "main_desktop\\.cpp$")
 add_library(busvr SHARED ${APP_SOURCES})
 target_include_directories(busvr PRIVATE ${SRC})

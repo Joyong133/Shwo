@@ -38,6 +38,7 @@ void main(){
   else if (mat == 6) { emis = alb * night * 1.6; }
   else if (mat == 7) { emis = alb * night * 0.85 * clamp(1.0 - dist / 280.0, 0.0, 1.0); }
   else if (mat == 8) { light = vec3(0.0); emis = alb; fog = 0.0; }
+  else if (mat == 9) { light = vec3(1.0); emis = vec3(0.0); fog = 0.0; win = -1.0; }
   vCol = alb; vUvw = aUv; vLight = light; vEmis = emis; vFog = vec4(fogCol(vdir), fog); vEx = vec3(win, aCol.a, alpha);
 }
 )";
@@ -55,7 +56,7 @@ void main(){
     c += (1.0 - tex.a) * step(h, 0.36) * vEx.x * wc * 0.85;
   }
   c = mix(c, vFog.rgb, vFog.a);
-  oColor = vec4(c, vEx.z);
+  oColor = vec4(c, vEx.x < -0.5 ? vEx.z * tex.a : vEx.z);
 }
 )";
 

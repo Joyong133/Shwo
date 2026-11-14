@@ -24,6 +24,72 @@ bool platformReadAsset(const char* name, std::vector<uint8_t>& out) {
 }
 void* platformGLProc(const char* name) { return (void*)eglGetProcAddress(name); }
 std::string platformSavePath() { return std::string(gApp->activity->internalDataPath ? gApp->activity->internalDataPath : "/data/local/tmp") + "/trip.sav"; }
+double platformWallClock() { timespec t; clock_gettime(CLOCK_REALTIME, &t); return (double)t.tv_sec + t.tv_nsec * 1e-9; }
+
+// ---- calls into BusActivity.java (any thread)
+struct Jni {
+    JNIEnv* env = nullptr; bool attached = false;
+    Jni() {
+        JavaVM* vm = gApp->activity->vm;
+        if (vm->GetEnv((void**)&env, JNI_VERSION_1_6) != JNI_OK) { if (vm->AttachCurrentThread(&env, nullptr) == JNI_OK) attached = true; else env = nullptr; }
+    }
+    ~Jni() { if (attached) gApp->activity->vm->DetachCurrentThread(); }
+    bool ok(const char* what) {
+        if (!env->ExceptionCheck()) return true;
+        env->ExceptionDescribe(); env->ExceptionClear(); LOGE("java exception in %s", what); return false;
+    }
+};
+bool platformListApps(std::vector<AppEntry>& out) {
+    Jni j; JNIEnv* e = j.env; if (!e) return false;
+    jobject act = gApp->activity->clazz;
+    jclass cls = e->GetObjectClass(act);
+    jmethodID mq = e->GetMethodID(cls, "queryApps", "()[Ljava/lang/String;");
+    jmethodID mt = mq ? e->GetMethodID(cls, "renderTile", "(Ljava/lang/String;ZI)[I") : nullptr;
+    if (!j.ok("method lookup") || !mq || !mt) { e->DeleteLocalRef(cls); return false; }
+    jobjectArray arr = (jobjectArray)e->CallObjectMethod(act, mq);
+    if (!j.ok("queryApps") || !arr) { e->DeleteLocalRef(cls); return false; }
+    jsize n = e->GetArrayLength(arr);
+    for (jsize i = 0; i < n && out.size() < 200; i++) {
+        jstring js = (jstring)e->GetObjectArrayElement(arr, i);
+        if (!js) continue;
+        const char* c = e->GetStringUTFChars(js, nullptr); std::string row = c ? c : ""; if (c) e->ReleaseStringUTFChars(js, c);
+        e->DeleteLocalRef(js);
+        size_t a = row.find('\t'), b = a == std::string::npos ? a : row.find('\t', a + 1);
+        if (b == std::string::npos) continue;
+        AppEntry ae; ae.pkg = row.substr(0, a); ae.label = row.substr(a + 1, b - a - 1); ae.apk = row.substr(b + 1) == "1";
+        jstring jp = e->NewStringUTF(ae.pkg.c_str());
+        jintArray px = (jintArray)e->CallObjectMethod(act, mt, jp, (jboolean)ae.apk, (jint)kAppTile);
+        if (j.ok("renderTile") && px && e->GetArrayLength(px) == kAppTile * kAppTile) {
+            ae.rgba.resize((size_t)kAppTile * kAppTile * 4);
+            jint* p = e->GetIntArrayElements(px, nullptr);
+            for (int k = 0; k < kAppTile * kAppTile; k++) {
+                uint32_t v = (uint32_t)p[k];
+                ae.rgba[k * 4] = (v >> 16) & 255; ae.rgba[k * 4 + 1] = (v >> 8) & 255; ae.rgba[k * 4 + 2] = v & 255; ae.rgba[k * 4 + 3] = v >> 24;
+            }
+            e->ReleaseIntArrayElements(px, p, JNI_ABORT);
+            out.push_back(std::move(ae));
+        }
+        if (px) e->DeleteLocalRef(px);
+        e->DeleteLocalRef(jp);
+    }
+    e->DeleteLocalRef(arr); e->DeleteLocalRef(cls);
+    return true;
+}
+bool platformLaunchApp(const std::string& pkg, const std::string& title, const std::string& text) {
+    Jni j; JNIEnv* e = j.env; if (!e) return false;
+    jobject act = gApp->activity->clazz;
+    jclass cls = e->GetObjectClass(act);
+    jmethodID m = e->GetMethodID(cls, "launchApp", "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)Z");
+    bool okay = false;
+    if (j.ok("launchApp lookup") && m) {
+        jstring a = e->NewStringUTF(pkg.c_str()), b = e->NewStringUTF(title.c_str()), c = e->NewStringUTF(text.c_str());
+        okay = e->CallBooleanMethod(act, m, a, b, c) && j.ok("launchApp");
+        e->DeleteLocalRef(a); e->DeleteLocalRef(b); e->DeleteLocalRef(c);
+    }
+    e->DeleteLocalRef(cls);
+    LOGI("launch %s -> %d", pkg.c_str(), okay);
+    return okay;
+}
 
 #define XRCHK(call) do { XrResult _r = (call); if (XR_FAILED(_r)) { LOGE("%s failed: %d", #call, (int)_r); return false; } } while (0)
 #define XRWARN(call) do { XrResult _r = (call); if (XR_FAILED(_r)) LOGE("%s failed: %d (continuing)", #call, (int)_r); } while (0)
@@ -307,7 +373,7 @@ void android_main(android_app* app) {
         }
     }
     if (!ok) LOGE("initialisation failed - exiting");
-    XrTime lastTime = 0; bool audioPaused = false;
+    XrTime lastTime = 0; bool audioPaused = false, wasActive = false, everActive = false;
     while (ok && !app->destroyRequested && !X.exitRequested) {
         bool wantPaused = !X.resumed || !X.sessionRunning;
         if (wantPaused != audioPaused) { audioPaused = wantPaused; game->audio.setPaused(audioPaused); }
@@ -322,6 +388,17 @@ void android_main(android_app* app) {
         }
         if (app->destroyRequested) break;
         pollXrEvents();
+        // leaving for another app / taking the headset off, and coming back
+        bool active = X.resumed && X.sessionRunning;
+        if (active != wasActive) {
+            if (!active) game->onSuspend();
+            else if (everActive && game->onWake()) {          // the bus drove on meanwhile: build the new surroundings first
+                localClock(*game);
+                AppInput warm; warm.dt = 0; game->update(warm, true);
+                lastTime = 0;
+            }
+            wasActive = active; everActive = everActive || active;
+        }
         if (!X.sessionRunning) { usleep(20000); continue; }
 
         XrFrameWaitInfo wi = {XR_TYPE_FRAME_WAIT_INFO}; XrFrameState fs = {XR_TYPE_FRAME_STATE};

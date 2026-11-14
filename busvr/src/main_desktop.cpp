@@ -3,6 +3,7 @@
 #include <EGL/egl.h>
 #include <EGL/eglext.h>
 #include <chrono>
+#include <thread>
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "third_party/stb_image_write.h"
 
@@ -14,6 +15,30 @@ bool platformReadAsset(const char* name, std::vector<uint8_t>& out) {
 }
 void* platformGLProc(const char* name) { return (void*)eglGetProcAddress(name); }
 std::string platformSavePath() { return "/tmp/busvr_save.bin"; }
+double platformWallClock() { return (double)time(nullptr); }
+// A few made-up apps so the app page can be checked without a headset.
+bool platformListApps(std::vector<AppEntry>& out) {
+    static const char* names[] = {"내 게임.apk", "영상 플레이어", "SideQuest 앱", "브라우저", "유튜브 VR", "넷플릭스", "음악", "사진", "체스", "지도", "날씨", "메모", "탁구"};
+    static const int cols[] = {0xe0533d, 0x3d8be0, 0x3dbf6a, 0xf2b84b, 0xd33a3a, 0x111111, 0x8a4be0, 0x2fb5c9, 0x6b4a2c, 0x4caf50, 0x64b5f6, 0xffd54f, 0xff7043};
+    for (int k = 0; k < 13; k++) {
+        AppEntry a; a.pkg = std::string("com.example.app") + std::to_string(k); a.label = names[k]; a.apk = k < 3 || k == 8;
+        a.rgba.assign((size_t)kAppTile * kAppTile * 4, 0);
+        int is = kAppTile * 9 / 16, x0 = (kAppTile - is) / 2, y0 = kAppTile / 22; Vec3 c = rgb(cols[k]);
+        for (int y = 0; y < kAppTile; y++) for (int x = 0; x < kAppTile; x++) {
+            uint8_t* p = &a.rgba[((size_t)y * kAppTile + x) * 4];
+            float dx = std::max(std::max(x0 + 24 - x, x - (x0 + is - 24)), 0), dy = std::max(std::max(y0 + 24 - y, y - (y0 + is - 24)), 0);
+            bool icon = x >= x0 && x < x0 + is && y >= y0 && y < y0 + is && dx * dx + dy * dy < 24 * 24;
+            bool label = y > y0 + is + 14 && y < y0 + is + 40 && x > 40 && x < kAppTile - 40;
+            bool badge = a.apk && x > kAppTile * 0.71f && x < kAppTile * 0.98f && y > kAppTile * 0.02f && y < kAppTile * 0.14f;
+            if (badge) { p[0] = 242; p[1] = 184; p[2] = 75; p[3] = 255; }
+            else if (icon) { p[0] = (uint8_t)(c.x * 255); p[1] = (uint8_t)(c.y * 255); p[2] = (uint8_t)(c.z * 255); p[3] = 255; }
+            else if (label) { p[0] = p[1] = p[2] = 235; p[3] = 255; }
+        }
+        out.push_back(std::move(a));
+    }
+    return true;
+}
+bool platformLaunchApp(const std::string& pkg, const std::string&, const std::string& text) { LOGI("would launch %s (%s)", pkg.c_str(), text.c_str()); return true; }
 
 static Quat quatYawPitch(float yaw, float pitch) {
     float cy = cosf(yaw / 2), sy = sinf(yaw / 2), cp = cosf(pitch / 2), sp = sinf(pitch / 2);
@@ -21,14 +46,14 @@ static Quat quatYawPitch(float yaw, float pitch) {
 }
 int main(int argc, char** argv) {
     double km = 60; float yaw = 0, pitch = 0, clock = 14, scale = 1, fov = 100; int W = 1280, H = 1280, mono = 1, month = 11, frames = 0; std::string out = "/tmp/shot.png"; int phase = PH_RIDE;
-    float ex = 0, ey = 0, ez = 0; float cloud = 0.35f; int both = 0; int seatArg = 0, busArg = 1, hudArg = 0, menuArg = 0, simulate = 0;
+    float ex = 0, ey = 0, ez = 0; float cloud = 0.35f; int both = 0; int seatArg = 0, busArg = 1, hudArg = 0, menuArg = 0, simulate = 0, appsPage = -1; double awayMin = -1;
     for (int i = 1; i + 1 < argc; i += 2) {
         std::string k = argv[i]; const char* v = argv[i + 1];
         if (k == "--km") km = atof(v); else if (k == "--yaw") yaw = atof(v); else if (k == "--pitch") pitch = atof(v); else if (k == "--clock") clock = atof(v);
         else if (k == "--out") out = v; else if (k == "--w") W = atoi(v); else if (k == "--h") H = atoi(v); else if (k == "--fov") fov = atof(v);
         else if (k == "--month") month = atoi(v); else if (k == "--assets") gAssetDir = v; else if (k == "--frames") frames = atoi(v); else if (k == "--scale") scale = atof(v);
         else if (k == "--ex") ex = atof(v); else if (k == "--ey") ey = atof(v); else if (k == "--ez") ez = atof(v); else if (k == "--cloud") cloud = atof(v);
-        else if (k == "--phase") phase = atoi(v); else if (k == "--seat") seatArg = atoi(v); else if (k == "--bus") busArg = atoi(v); else if (k == "--hud") hudArg = atoi(v); else if (k == "--simulate") simulate = atoi(v); else if (k == "--menu") menuArg = atoi(v); else if (k == "--both") both = atoi(v);
+        else if (k == "--phase") phase = atoi(v); else if (k == "--seat") seatArg = atoi(v); else if (k == "--bus") busArg = atoi(v); else if (k == "--hud") hudArg = atoi(v); else if (k == "--simulate") simulate = atoi(v); else if (k == "--away") awayMin = atof(v); else if (k == "--apps") appsPage = atoi(v); else if (k == "--menu") menuArg = atoi(v); else if (k == "--both") both = atoi(v);
     }
     EGLDisplay dpy = eglGetPlatformDisplay(EGL_PLATFORM_SURFACELESS_MESA, EGL_DEFAULT_DISPLAY, nullptr);
     EGLint ma, mi; if (!eglInitialize(dpy, &ma, &mi)) { LOGE("egl init failed"); return 1; }
@@ -39,7 +64,7 @@ int main(int argc, char** argv) {
     EGLint pa[] = {EGL_WIDTH, 16, EGL_HEIGHT, 16, EGL_NONE}; EGLSurface surf = eglCreatePbufferSurface(dpy, cfg, pa);
     if (!eglMakeCurrent(dpy, surf, surf, ctx)) { LOGE("make current failed"); return 1; }
 
-    App app; app.seat = seatArg; app.showBus = busArg != 0; app.nowClock = clock; app.autoRecenter = false;
+    App app; app.seat = seatArg; app.showBus = busArg != 0; app.nowClock = clock; app.autoRecenter = false; app.allowAutoResume = false;
     if (!app.init()) { LOGE("app init failed"); return 1; }
     app.month = month; app.dayOfYear = (month - 1) * 30 + 15; app.env.cloud = cloud; app.hud = hudArg != 0;
     if (phase == PH_RIDE) { app.startTrip(false); app.annDepart = true; app.menuOpen = menuArg != 0; }
@@ -69,6 +94,17 @@ int main(int argc, char** argv) {
     in.dt = 0;
     auto t0 = std::chrono::steady_clock::now();
     app.update(in, true);
+    if (appsPage >= 0) {      // open the app page
+        app.menuOpen = true; app.menuPage = 1; app.appsPage = appsPage; app.requestApps();
+        while (app.appsLoading) { app.pollApps(); std::this_thread::sleep_for(std::chrono::milliseconds(5)); }
+        app.update(in, true); app.hover = 100 + 1; app.buildMenu();
+    }
+    if (awayMin >= 0) {       // pretend the rider left through the app page this many minutes ago
+        app.awayViaLauncher = true; app.suspendWall = platformWallClock() - awayMin * 60.0;
+        bool moved = app.onWake();
+        LOGI("away %.0f min -> moved=%d now %.1f km phase=%d banner=%s", awayMin, moved, app.s / 1000, app.phase, app.banner.c_str());
+        app.update(in, true);
+    }
     auto t1 = std::chrono::steady_clock::now();
     for (int fr = 0; fr < frames; fr++) { in.dt = 1.0 / 72; app.update(in, true); }
     app.render(rt, color, in);

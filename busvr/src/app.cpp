@@ -14,9 +14,10 @@ bool App::init() {
     audio.start();
     loadSave();
     s = 0; computeBusPose(0);
+    if (tryAutoResume()) computeBusPose(0);     // came back from another app: the bus has driven on meanwhile
     return true;
 }
-void App::shutdown() { audio.stop(); world.shutdown(); }
+void App::shutdown() { if (appsThread.joinable()) appsThread.join(); audio.stop(); world.shutdown(); }
 void App::onPause() { if (dirty && phase == PH_RIDE && timeSec - lastSave > 3.0) { lastSave = timeSec; writeSave(); } }
 
 Vec3 App::seatEye() const { return bus.eye(bus.choices[seat % (int)bus.choices.size()]); }
@@ -118,6 +119,7 @@ void App::recenter(const AppInput& in) {
 void App::update(const AppInput& in, bool blockingLoad) {
     timeSec += in.dt;
     lastIn = in;
+    pollApps();
     if (autoRecenter && !recentered && in.dt > 0) { trackedFor += in.dt; if (trackedFor > 0.6) recenter(in); }
     handleInput(in);
     if (phase == PH_RIDE) advance(in.dt);
@@ -201,7 +203,9 @@ void App::render(StereoTarget& rt, GLuint colorTex, const AppInput& in) {
         glDisable(GL_CULL_FACE);
         if (hud && !menuOpen) { ren.drawLit(hudBg, seatWorld, ren.texInterior, 2.f); ren.drawText(hudText, seatWorld, font); }
         if (menuOpen) {
-            ren.drawLit(uiBg, seatWorld, ren.texInterior, 2.f); ren.drawText(uiText, seatWorld, font);
+            ren.drawLit(uiBg, seatWorld, ren.texInterior, 2.f);
+            if (appsTex && uiIcons.valid()) ren.drawLit(uiIcons, seatWorld, appsTex, 1.f);
+            ren.drawText(uiText, seatWorld, font);
             ren.drawLit(pointerMesh, seatWorld, ren.texInterior, 2.f);
         }
         glEnable(GL_CULL_FACE);

@@ -5,10 +5,11 @@ static const float kDepartOptions[] = {-1.f, 6.5f, 8.f, 11.f, 14.f, 16.5f, 19.f,
 static const float kSpeedOptions[] = {1.f, 4.f, 16.f, 60.f};
 static const char* kSpeedNames[] = {"실제 시간 (1배속)", "4배속", "16배속", "60배속 (미리보기)"};
 static const char* kSeatNames[] = {"3번 · 맨 앞 1인석 (전면 시야)", "12번 · 가운데 1인석 (오른쪽 창)", "10번 · 가운데 왼쪽 창가", "1번 · 맨 앞 왼쪽 창가", "24번 · 뒤쪽 1인석 (오른쪽 창)"};
-enum { B_DEP_L = 1, B_DEP_R, B_SEAT_L, B_SEAT_R, B_SPD_L, B_SPD_R, B_START, B_RESUME, B_CLOSE, B_END, B_HUD, B_RESTART, B_RECENTER };
+enum { B_DEP_L = 1, B_DEP_R, B_SEAT_L, B_SEAT_R, B_SPD_L, B_SPD_R, B_START, B_RESUME, B_CLOSE, B_END, B_HUD, B_RESTART, B_RECENTER, B_APPS };
+bool appsClick(App& a, int id);
 
 static const Vec3 kPanelC(0.f, 0.02f, -0.62f); static const float kPanelS = 0.62f;
-static const uint32_t SAVE_MAGIC = 0x31565342;
+static const uint32_t SAVE_MAGIC = 0x32565342;
 
 static std::string hhmm(double h) { h = fmod(h + 48.0, 24.0); int m = (int)floor(h * 60.0 + 0.5) % 1440; char b[16]; snprintf(b, sizeof(b), "%02d:%02d", m / 60, m % 60); return b; }
 
@@ -19,8 +20,9 @@ void App::loadSave() {
     const Route& R = world.d.route;
     if (n == sizeof(sd) && sd.magic == SAVE_MAGIC && sd.s > 50.0 && sd.s < R.length() - 50.0 && sd.nextStop >= 0 && sd.nextStop <= (int)R.stops.size()) { saved = sd; hasSave = true; }
 }
-void App::writeSave() {
-    SaveData sd; sd.magic = SAVE_MAGIC; sd.s = s; sd.tripTime = tripTime; sd.departClock = departClock; sd.dwellLeft = dwellLeft; sd.timeScale = timeScale;
+void App::writeSave(int away) {
+    if (away < 0) away = phase == PH_RIDE ? (awayViaLauncher ? 2 : 1) : 0;
+    SaveData sd; sd.magic = SAVE_MAGIC; sd.away = away; sd.wall = platformWallClock(); sd.s = s; sd.tripTime = tripTime; sd.departClock = departClock; sd.dwellLeft = dwellLeft; sd.timeScale = timeScale;
     sd.nextStop = nextStop; sd.seat = seat; sd.month = month; sd.dayOfYear = dayOfYear;
     FILE* f = fopen(platformSavePath().c_str(), "wb"); if (!f) return;
     fwrite(&sd, 1, sizeof(sd), f); fclose(f); saved = sd; hasSave = true; dirty = false;
@@ -29,7 +31,9 @@ void App::clearSave() { remove(platformSavePath().c_str()); hasSave = false; }
 
 void App::click(int id) {
     audio.trigger(AE_TICK);
+    if (menuPage == 1 && appsClick(*this, id)) return;
     switch (id) {
+        case B_APPS: menuPage = 1; appsPage = 0; requestApps(); break;
         case B_DEP_L: departSel = (departSel + 7) % 8; break;
         case B_DEP_R: departSel = (departSel + 1) % 8; break;
         case B_SEAT_L: setSeat(seat - 1); break;
@@ -41,7 +45,7 @@ void App::click(int id) {
         case B_RECENTER: recenter(lastIn); break;
         case B_CLOSE: menuOpen = false; break;
         case B_HUD: hud = !hud; break;
-        case B_END: writeSave(); phase = PH_MENU; s = 0; speed = 0; dwellLeft = 0; tripTime = 0; menuOpen = true; cars.clear(); break;
+        case B_END: writeSave(0); phase = PH_MENU; s = 0; speed = 0; dwellLeft = 0; tripTime = 0; menuOpen = true; cars.clear(); break;
         case B_RESTART: phase = PH_MENU; s = 0; speed = 0; tripTime = 0; menuOpen = true; cars.clear(); break;
     }
 }
@@ -80,7 +84,7 @@ void App::handleInput(const AppInput& in) {
     prevTrig[0] = trig[0]; prevTrig[1] = trig[1];
     bool a = in.hand[0].btnA || in.hand[1].btnA, b = in.hand[0].btnB || in.hand[1].btnB;
     if (a && !prevA) { hud = !hud; audio.trigger(AE_TICK); dispTimer = 1e9; }
-    if (((b && !prevB) || (in.menu && !prevMenu)) && phase == PH_RIDE) { menuOpen = !menuOpen; audio.trigger(AE_TICK); }
+    if (((b && !prevB) || (in.menu && !prevMenu)) && phase == PH_RIDE) { menuOpen = !menuOpen; menuPage = 0; audio.trigger(AE_TICK); }
     prevA = a; prevB = b; prevMenu = in.menu;
     float sx = fabsf(in.hand[0].stickX) > fabsf(in.hand[1].stickX) ? in.hand[0].stickX : in.hand[1].stickX;
     int st = sx > 0.7f ? 1 : (sx < -0.7f ? -1 : (fabsf(sx) < 0.3f ? 0 : prevStick));
@@ -112,7 +116,7 @@ void App::handleInput(const AppInput& in) {
 
 void App::buildMenu() {
     const Route& R = world.d.route;
-    MeshData bg, tx; bg.mat = MAT_UI; bg.layer = -1; tx.mat = MAT_CABIN;
+    MeshData bg, tx, ic; bg.mat = MAT_UI; bg.layer = -1; tx.mat = MAT_CABIN;
     buttons.clear();
     auto P = [&](float x, float y, float z = 0) { return kPanelC + Vec3(x * kPanelS, y * kPanelS, z); };
     auto rect = [&](float x0, float y0, float x1, float y1, int col, int a, float z = 0) { bg.color(col, a); bg.quad(P(x0, y0, z), P(x1, y0, z), P(x1, y1, z), P(x0, y1, z)); };
@@ -131,8 +135,16 @@ void App::buildMenu() {
     };
     rect(-0.5f, -0.36f, 0.5f, 0.36f, 0x0e1622, 238);
     rect(-0.5f, 0.345f, 0.5f, 0.36f, 0xf2b84b, 255, 0.001f);
-    button(B_RECENTER, 0.30f, 0.285f, 0.47f, 0.33f, "자리 맞추기", 0.022f, 0x25344c);
     char buf[160];
+    if (menuPage == 1) {
+        buildAppsPage(bg, tx, ic);
+        uiBg.upload(bg, true); uiText.upload(tx, true);
+        if (ic.i.empty()) uiIcons.destroy(); else uiIcons.upload(ic, true);
+        return;
+    }
+    uiIcons.destroy();
+    button(B_RECENTER, 0.30f, 0.285f, 0.47f, 0.33f, "자리 맞추기", 0.022f, 0x25344c);
+    if (phase == PH_MENU) button(B_APPS, -0.47f, 0.285f, -0.27f, 0.33f, "다른 앱 쓰기", 0.022f, 0x25344c);
     if (phase == PH_MENU) {
         text("서울 → 부산 고속버스", 0, 0.255f, 0.066f, 0xffffff);
         text("서울고속버스터미널(경부) → 부산종합버스터미널", 0, 0.195f, 0.030f, 0xc9d4e6);
@@ -158,9 +170,10 @@ void App::buildMenu() {
         row(-0.02f, "진행 속도", kSpeedNames[speedSel], B_SPD_L, B_SPD_R);
         text("안내판", -0.45f, -0.122f, 0.034f, 0x9fb0c8, 0);
         button(B_HUD, -0.17f, -0.14f, 0.45f, -0.075f, hud ? "켜짐 (눌러서 끄기)" : "꺼짐 (눌러서 켜기)", 0.032f);
-        button(B_CLOSE, -0.45f, -0.275f, -0.03f, -0.185f, "계속 타기", 0.042f, 0x2f6f4a);
-        button(B_END, 0.03f, -0.275f, 0.45f, -0.185f, "여행 끝내기 (저장)", 0.034f, 0x6a3a3a);
-        text("배터리가 부족하면 끝내도 됩니다. 위치가 저장되어 이어서 탈 수 있습니다.", 0, -0.335f, 0.022f, 0x7f8da3);
+        button(B_CLOSE, -0.45f, -0.275f, -0.17f, -0.185f, "계속 타기", 0.038f, 0x2f6f4a);
+        button(B_APPS, -0.14f, -0.275f, 0.16f, -0.185f, "다른 앱 쓰기", 0.032f, 0x35507a);
+        button(B_END, 0.19f, -0.275f, 0.45f, -0.185f, "여행 끝내기", 0.032f, 0x6a3a3a);
+        text("다른 앱을 쓰는 동안에도 버스는 달립니다 · 여행 끝내기는 그 자리에 세워 두고 저장합니다", 0, -0.335f, 0.020f, 0x7f8da3);
     } else {
         text("부산 도착", 0, 0.22f, 0.07f, 0xffffff);
         text("부산종합버스터미널 (노포동)", 0, 0.14f, 0.036f, 0xc9d4e6);

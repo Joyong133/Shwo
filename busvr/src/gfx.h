@@ -10,6 +10,12 @@
 bool platformReadAsset(const char* name, std::vector<uint8_t>& out);
 void* platformGLProc(const char* name);
 std::string platformSavePath();
+// other apps on the headset (main_android.cpp talks to BusActivity.java; the desktop build fakes a few)
+static const int kAppTile = 256;
+struct AppEntry { std::string pkg, label; bool apk = false; std::vector<uint8_t> rgba; };   // rgba: kAppTile^2 * 4, top row first
+bool platformListApps(std::vector<AppEntry>& out);       // slow: call from a worker thread
+bool platformLaunchApp(const std::string& pkg, const std::string& title, const std::string& text);
+double platformWallClock();                              // seconds since 1970
 
 bool readAssetZ(const char* name, std::vector<uint8_t>& out);   // "<name>.z" = u32 rawSize + zlib stream
 
@@ -23,7 +29,8 @@ enum Mat : uint8_t {
     MAT_TUNNEL = 5,   // tunnel lining: lit by tunnel lamps
     MAT_NIGHTLAMP = 6,// emissive only at night (street lamps, head/tail lights)
     MAT_SIGN = 7,     // retro-reflective road sign: lights up in the headlights at night
-    MAT_UI = 8        // exact colour, unlit, never fogged (menus, screens)
+    MAT_UI = 8,       // exact colour, unlit, never fogged (menus, screens)
+    MAT_UITEX = 9     // textured, unlit, alpha from the texture (app icons)
 };
 struct Vtx {          // 32 bytes
     float px, py, pz;

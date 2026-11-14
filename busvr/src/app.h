@@ -4,6 +4,8 @@
 #include "bus.h"
 #include "models.h"
 #include "audio.h"
+#include <thread>
+#include <mutex>
 
 struct EyeView { Vec3 pos; Quat rot; float tanL = -1, tanR = 1, tanU = 1, tanD = -1; };       // pose in XR local space (origin = resting head)
 struct HandState { bool valid = false; Vec3 pos; Quat rot; float trigger = 0; float stickX = 0, stickY = 0; bool btnA = false, btnB = false; };
@@ -13,7 +15,8 @@ enum Phase { PH_MENU = 0, PH_RIDE = 1, PH_ARRIVED = 2 };
 
 struct Vehicle { double s; float lat, v, want; int type, tint, dir, lane; };
 struct Button { float x0, y0, x1, y1; int id; };
-struct SaveData { uint32_t magic = 0; double s = 0, tripTime = 0, departClock = 0; float dwellLeft = 0, timeScale = 1; int nextStop = 0, seat = 0, month = 0, dayOfYear = 0; };
+// away: 0 = trip ended by the rider (the bus waits), 1 = ride in progress, 2 = rider left to use another app (the bus keeps going)
+struct SaveData { uint32_t magic = 0; double s = 0, tripTime = 0, departClock = 0; float dwellLeft = 0, timeScale = 1; int nextStop = 0, seat = 0, month = 0, dayOfYear = 0; int away = 0; double wall = 0; };
 
 struct App {
     Renderer ren; World world; Font font; Env env; BusModel bus; Audio audio;
@@ -63,7 +66,22 @@ struct App {
     void buildMenu();
     void buildDisplays();
     void click(int id);
-    void loadSave(); void writeSave(); void clearSave();
+    void loadSave(); void writeSave(int away = -1); void clearSave();
+    // ---- other apps on the headset (app_apps.cpp)
+    std::vector<AppEntry> apps; GLuint appsTex = 0; int appsPage = 0; bool appsOnlyApk = false, appsLoading = false; double appsLoadedAt = -1e9;
+    std::thread appsThread; std::mutex appsMtx; std::vector<AppEntry> appsIncoming; bool appsArrived = false;
+    int menuPage = 0;                        // 0 = main menu, 1 = app list
+    Mesh uiIcons;
+    bool awayViaLauncher = false, allowAutoResume = true; double suspendWall = 0;
+    void requestApps();
+    void pollApps();
+    std::vector<int> visibleApps() const;
+    void openOtherApp(int index);
+    void buildAppsPage(MeshData& bg, MeshData& tx, MeshData& icons);
+    void onSuspend();
+    bool onWake();                           // true when the bus moved on while we were away (reload the surroundings)
+    void catchUp(double seconds, bool viaLauncher);
+    bool tryAutoResume();
     void announce(const std::string& text, double seconds, bool chime);
     // traffic (app_traffic.cpp)
     void initTraffic();
