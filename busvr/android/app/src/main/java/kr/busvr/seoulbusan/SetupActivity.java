@@ -72,6 +72,11 @@ public class SetupActivity extends Activity {
                 + "개발자 옵션도 없으면: 설정 > 휴대전화 정보 > 빌드 번호를 7번 누릅니다.", 13, muted, false);
         button(root, "무선 디버깅 화면 다시 열기", v -> openWirelessDebugging());
 
+        text(root, "'무선 디버깅'이 안 보이나요? — 먼저 개발자 모드 켜기", 17, Color.rgb(255, 176, 32), true);
+        text(root, "Quest는 처음에 개발자 기능이 꺼져 있습니다. 휴대폰 'Meta Horizon(또는 Meta Quest)' 앱 → 메뉴 → 기기 → "
+                + "이 헤드셋 선택 → '개발자 모드'를 켜세요. (무료 개발자 계정 하나 만들면 됩니다.) 그다음 헤드셋을 껐다 켜면 "
+                + "위 '무선 디버깅 화면 열기'에서 무선 디버깅이 나타납니다.", 15, muted, false);
+
         text(root, "2. 6자리 코드 입력", 19, accent, true);
         code = new EditText(this);
         code.setHint("예: 123456");
@@ -109,15 +114,38 @@ public class SetupActivity extends Activity {
     }
 
     /** Opens Settings > Developer options > Wireless debugging directly (Android 11+), else the closest screen. */
+    /** Does this headset expose Android's Wireless debugging page? (Needs Developer Mode on, enabled from the phone app.) */
+    private boolean wirelessDebuggingResolvable() {
+        PackageManager pm = getPackageManager();
+        for (String cls : new String[]{
+                "com.android.settings.Settings$WirelessDebuggingActivity",
+                "com.android.settings.development.WirelessDebuggingActivity"}) {
+            if (new Intent().setClassName("com.android.settings", cls).resolveActivityInfo(pm, 0) != null) return true;
+        }
+        Intent dev = new Intent(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS).setPackage("com.android.settings");
+        return dev.resolveActivityInfo(pm, 0) != null;
+    }
+
+    /** Opens Android's Wireless debugging page directly (bypassing Meta's own Settings app), else Developer options. */
     private void openWirelessDebugging() {
         PackageManager pm = getPackageManager();
-        // The Wireless debugging page has its own exported Settings activity (also used by the quick-settings tile).
-        Intent direct = new Intent().setClassName("com.android.settings", "com.android.settings.Settings$WirelessDebuggingActivity");
-        if (direct.resolveActivityInfo(pm, 0) != null && launch(direct)) return;
-        log("무선 디버깅 화면을 바로 열 수 없어 개발자 옵션을 엽니다. 목록에서 '무선 디버깅'을 눌러 주세요.");
-        if (launch(new Intent(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS))) return;
-        if (launch(new Intent(Settings.ACTION_DEVICE_INFO_SETTINGS))) { log("개발자 옵션이 꺼져 있습니다. '빌드 번호'를 7번 눌러 켠 뒤, 위 버튼을 다시 누르세요."); return; }
-        if (!launch(new Intent(Settings.ACTION_SETTINGS))) log("설정 화면을 열 수 없습니다.");
+        for (String cls : new String[]{
+                "com.android.settings.Settings$WirelessDebuggingActivity",
+                "com.android.settings.development.WirelessDebuggingActivity"}) {
+            Intent direct = new Intent().setClassName("com.android.settings", cls);
+            if (direct.resolveActivityInfo(pm, 0) != null && launch(direct)) return;
+        }
+        // Force the *Android* developer options, not Meta's Settings app.
+        Intent dev = new Intent(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS).setPackage("com.android.settings");
+        if (dev.resolveActivityInfo(pm, 0) != null && launch(dev)) {
+            log("개발자 옵션이 열렸습니다. 아래로 내려 '무선 디버깅'을 켜 주세요. 보이지 않으면 개발자 모드가 꺼진 것입니다 (아래 3번 참고).");
+            return;
+        }
+        if (launch(new Intent(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS))) {
+            log("개발자 옵션에서 '무선 디버깅'을 켜 주세요. 없으면 개발자 모드가 꺼진 것입니다 (아래 3번 참고).");
+            return;
+        }
+        log("이 헤드셋에는 무선 디버깅 화면이 없습니다. 먼저 개발자 모드를 켜야 합니다 (아래 3번).");
     }
 
     private void log(final String s) {

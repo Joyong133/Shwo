@@ -210,9 +210,9 @@ void App::monBuild() {
             text("3. 나온 6자리 숫자를 '좌석 모니터 설정' 창에 넣고 '연결하기' → '버스로 돌아가기'.", 0.04f, 0.56f, 0.0105f, 0xb9c8e0);
             text("Wi-Fi가 켜져 있어야 합니다. 이 과정은 다시 할 필요가 없습니다.", 0.04f, 0.49f, 0.0100f, 0x8f9db5);
             button(M_SETUP, 0.04f, 0.31f, 0.60f, 0.43f, "설정 열기 (처음 한 번)", 0.016f, 0x2f6f4a);
-            text("PC가 있으면 대신:", 0.64f, 0.385f, 0.0085f, 0x8f9db5);
-            text("adb shell sh /sdcard/Android/", 0.64f, 0.355f, 0.0075f, 0x8f9db5);
-            text("data/kr.busvr.seoulbusan/files/start.sh", 0.64f, 0.33f, 0.0075f, 0x8f9db5);
+            text("무선 디버깅이 안 보이면:", 0.64f, 0.40f, 0.0090f, 0xffb020);
+            text("휴대폰 Meta Horizon 앱 → 기기 →", 0.64f, 0.37f, 0.0080f, 0x8f9db5);
+            text("개발자 모드 켜기 → 헤드셋 재시작", 0.64f, 0.345f, 0.0080f, 0x8f9db5);
         } else {
             text(monHS == HS_STARTING ? "모니터 도우미를 켜는 중…" : "모니터 도우미를 켜지 못했습니다", 0.04f, 0.87f, 0.019f, 0xffffff);
             std::string msg = monHSMsg.empty() ? std::string("잠시 기다려 주세요.") : monHSMsg;
