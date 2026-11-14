@@ -56,7 +56,10 @@ bool platformListApps(std::vector<AppEntry>& out) {
         e->DeleteLocalRef(js);
         size_t a = row.find('\t'), b = a == std::string::npos ? a : row.find('\t', a + 1);
         if (b == std::string::npos) continue;
-        AppEntry ae; ae.pkg = row.substr(0, a); ae.label = row.substr(a + 1, b - a - 1); ae.apk = row.substr(b + 1) == "1";
+        size_t c3 = row.find('\t', b + 1);
+        AppEntry ae; ae.pkg = row.substr(0, a); ae.label = row.substr(a + 1, b - a - 1);
+        ae.apk = row.substr(b + 1, c3 == std::string::npos ? std::string::npos : c3 - b - 1) == "1";
+        ae.vr = c3 != std::string::npos && row.substr(c3 + 1) == "1";
         jstring jp = e->NewStringUTF(ae.pkg.c_str());
         jintArray px = (jintArray)e->CallObjectMethod(act, mt, jp, (jboolean)ae.apk, (jint)kAppTile);
         if (j.ok("renderTile") && px && e->GetArrayLength(px) == kAppTile * kAppTile) {
@@ -75,6 +78,72 @@ bool platformListApps(std::vector<AppEntry>& out) {
     e->DeleteLocalRef(arr); e->DeleteLocalRef(cls);
     return true;
 }
+// ---- seat monitor
+static jmethodID jmid(JNIEnv* e, const char* name, const char* sig) {
+    jclass cls = e->GetObjectClass(gApp->activity->clazz);
+    jmethodID m = e->GetMethodID(cls, name, sig);
+    e->DeleteLocalRef(cls);
+    if (e->ExceptionCheck()) { e->ExceptionDescribe(); e->ExceptionClear(); return nullptr; }
+    return m;
+}
+int platformHelperState() {
+    Jni j; if (!j.env) return 0;
+    static jmethodID m = jmid(j.env, "helperState", "()I");
+    if (!m) return 0;
+    int r = j.env->CallIntMethod(gApp->activity->clazz, m);
+    return j.ok("helperState") ? r : 0;
+}
+int platformMonitorOpen(unsigned tex, int w, int h, int dpi) {
+    Jni j; if (!j.env) return -1;
+    static jmethodID m = jmid(j.env, "monitorOpen", "(IIII)I");
+    if (!m) return -1;
+    int r = j.env->CallIntMethod(gApp->activity->clazz, m, (jint)tex, (jint)w, (jint)h, (jint)dpi);
+    LOGI("monitor display -> %d", r);
+    return j.ok("monitorOpen") ? r : -1;
+}
+bool platformMonitorLaunch(const std::string& pkg) {
+    Jni j; if (!j.env) return false;
+    jmethodID m = jmid(j.env, "monitorLaunch", "(Ljava/lang/String;)Z");
+    if (!m) return false;
+    jstring s = j.env->NewStringUTF(pkg.c_str());
+    bool r = j.env->CallBooleanMethod(gApp->activity->clazz, m, s);
+    j.env->DeleteLocalRef(s);
+    r = j.ok("monitorLaunch") && r;
+    LOGI("monitor launch %s -> %d", pkg.c_str(), r);
+    return r;
+}
+void platformMonitorTouch(int action, float x, float y) {
+    Jni j; if (!j.env) return;
+    static jmethodID m = jmid(j.env, "monitorTouch", "(IFF)V");
+    if (m) { j.env->CallVoidMethod(gApp->activity->clazz, m, (jint)action, (jfloat)x, (jfloat)y); j.ok("monitorTouch"); }
+}
+void platformMonitorScroll(float x, float y, float v) {
+    Jni j; if (!j.env) return;
+    static jmethodID m = jmid(j.env, "monitorScroll", "(FFF)V");
+    if (m) { j.env->CallVoidMethod(gApp->activity->clazz, m, (jfloat)x, (jfloat)y, (jfloat)v); j.ok("monitorScroll"); }
+}
+void platformMonitorKey(int key) {
+    Jni j; if (!j.env) return;
+    static jmethodID m = jmid(j.env, "monitorKey", "(I)V");
+    if (m) { j.env->CallVoidMethod(gApp->activity->clazz, m, (jint)key); j.ok("monitorKey"); }
+}
+void platformMonitorClose() {
+    Jni j; if (!j.env) return;
+    static jmethodID m = jmid(j.env, "monitorClose", "()V");
+    if (m) { j.env->CallVoidMethod(gApp->activity->clazz, m); j.ok("monitorClose"); }
+}
+bool platformMonitorUpdate(float out[16]) {
+    Jni j; if (!j.env) return false;
+    static jmethodID m = jmid(j.env, "monitorUpdate", "([F)Z");
+    static jfloatArray arr = nullptr;
+    if (!m) return false;
+    if (!arr) { jfloatArray a = j.env->NewFloatArray(16); arr = (jfloatArray)j.env->NewGlobalRef(a); j.env->DeleteLocalRef(a); }
+    bool r = j.env->CallBooleanMethod(gApp->activity->clazz, m, arr);
+    if (!j.ok("monitorUpdate")) return false;
+    j.env->GetFloatArrayRegion(arr, 0, 16, out);
+    return r;
+}
+
 bool platformLaunchApp(const std::string& pkg, const std::string& title, const std::string& text) {
     Jni j; JNIEnv* e = j.env; if (!e) return false;
     jobject act = gApp->activity->clazz;

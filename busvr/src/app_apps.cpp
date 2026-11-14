@@ -10,7 +10,7 @@ static const double kLongestAway = 12 * 3600.0;   // after this the trip is not 
 
 void App::requestApps() {
     if (appsLoading) return;
-    if (!apps.empty() && timeSec - appsLoadedAt < 30.0) return;
+    if (timeSec - appsLoadedAt < 30.0) return;
     if (appsThread.joinable()) appsThread.join();
     appsLoading = true;
     appsThread = std::thread([this]() {

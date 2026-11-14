@@ -82,6 +82,23 @@ struct App {
     bool onWake();                           // true when the bus moved on while we were away (reload the surroundings)
     void catchUp(double seconds, bool viaLauncher);
     bool tryAutoResume();
+    // ---- seat monitor in front of the seat, running the headset's own 2D apps (app_seat.cpp)
+    bool monShown = true; int monMode = 0;          // 0 app list, 1 an app is on the monitor, 2 how to switch the helper on
+    int monPage = 0, monPick = -1; bool monOnlyApk = false; int monHelper = 0; double monHelperCheck = -10;
+    int monDisplay = -1; GLuint monTex = 0; bool monFrame = false; float monMat[16];
+    std::vector<Button> monButtons; int monHover = -1; bool monTouching = false; int monTouchHand = -1; float monTX = 0, monTY = 0, monScrollAcc = 0;
+    float monRayLen[2] = {-1.f, -1.f}; bool monPrevTrig[2] = {false, false};
+    Mesh monFrameMesh, monQuad, monBg, monText, monIcons; Shader monShader;
+    std::string monNote; double monNoteUntil = 0;
+    void monInit();
+    void monInput(const AppInput& in);
+    void monTick();
+    void monBuild();
+    void monDrawOpaque(const Mat4& seatWorld);
+    void monDrawOverlay(const Mat4& seatWorld);
+    void monOpenApp(int index);
+    void monClick(int id);
+    std::vector<int> monApps() const;
     void announce(const std::string& text, double seconds, bool chime);
     // traffic (app_traffic.cpp)
     void initTraffic();

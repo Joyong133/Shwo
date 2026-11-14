@@ -12,10 +12,19 @@ void* platformGLProc(const char* name);
 std::string platformSavePath();
 // other apps on the headset (main_android.cpp talks to BusActivity.java; the desktop build fakes a few)
 static const int kAppTile = 256;
-struct AppEntry { std::string pkg, label; bool apk = false; std::vector<uint8_t> rgba; };   // rgba: kAppTile^2 * 4, top row first
+struct AppEntry { std::string pkg, label; bool apk = false, vr = false; std::vector<uint8_t> rgba; };   // rgba: kAppTile^2 * 4, top row first
 bool platformListApps(std::vector<AppEntry>& out);       // slow: call from a worker thread
 bool platformLaunchApp(const std::string& pkg, const std::string& title, const std::string& text);
 double platformWallClock();                              // seconds since 1970
+// seat monitor: the adb-started helper (SeatHelper.java) runs APKs on a virtual display that draws into our texture
+int platformHelperState();                               // 1 = helper connected
+int platformMonitorOpen(unsigned glTexture, int w, int h, int dpi);   // virtual display id, or -1
+bool platformMonitorLaunch(const std::string& pkg);      // slow (restarts the app on the monitor): call from a worker thread
+void platformMonitorTouch(int action, float x, float y); // MotionEvent action: 0 down, 1 up, 2 move
+void platformMonitorScroll(float x, float y, float v);
+void platformMonitorKey(int keyCode);
+void platformMonitorClose();
+bool platformMonitorUpdate(float matrix[16]);           // latch the newest frame (GL thread); true once a frame has arrived
 
 bool readAssetZ(const char* name, std::vector<uint8_t>& out);   // "<name>.z" = u32 rawSize + zlib stream
 
@@ -87,7 +96,7 @@ struct Mesh {
 struct Shader {
     GLuint prog = 0;
     std::map<std::string, GLint> locs;
-    bool build(const char* name, const char* vs, const char* fs);
+    bool build(const char* name, const char* vs, const char* fs, const char* fsPreamble = "");
     void use() const { glUseProgram(prog); }
     GLint loc(const char* n);
     void setMat4(const char* n, const Mat4& m) { glUniformMatrix4fv(loc(n), 1, GL_FALSE, m.m); }

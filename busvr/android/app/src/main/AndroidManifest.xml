@@ -25,6 +25,12 @@
         <meta-data android:name="com.oculus.supportedDevices" android:value="quest2|questpro|quest3|quest3s" />
         <meta-data android:name="com.oculus.vr.focusaware" android:value="true" />
 
+        <!-- the seat-monitor helper (started from adb) hands its binder over through this provider; it accepts adb/root only -->
+        <provider
+            android:name=".SeatLink"
+            android:authorities="kr.busvr.seoulbusan.seatlink"
+            android:exported="true" />
+
         <activity
             android:name=".BusActivity"
             android:configChanges="density|keyboard|keyboardHidden|navigation|orientation|screenLayout|screenSize|uiMode"

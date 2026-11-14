@@ -21,7 +21,7 @@ bool platformListApps(std::vector<AppEntry>& out) {
     static const char* names[] = {"내 게임.apk", "영상 플레이어", "SideQuest 앱", "브라우저", "유튜브 VR", "넷플릭스", "음악", "사진", "체스", "지도", "날씨", "메모", "탁구"};
     static const int cols[] = {0xe0533d, 0x3d8be0, 0x3dbf6a, 0xf2b84b, 0xd33a3a, 0x111111, 0x8a4be0, 0x2fb5c9, 0x6b4a2c, 0x4caf50, 0x64b5f6, 0xffd54f, 0xff7043};
     for (int k = 0; k < 13; k++) {
-        AppEntry a; a.pkg = std::string("com.example.app") + std::to_string(k); a.label = names[k]; a.apk = k < 3 || k == 8;
+        AppEntry a; a.pkg = std::string("com.example.app") + std::to_string(k); a.label = names[k]; a.apk = k < 3 || k == 8; a.vr = k == 9;
         a.rgba.assign((size_t)kAppTile * kAppTile * 4, 0);
         int is = kAppTile * 9 / 16, x0 = (kAppTile - is) / 2, y0 = kAppTile / 22; Vec3 c = rgb(cols[k]);
         for (int y = 0; y < kAppTile; y++) for (int x = 0; x < kAppTile; x++) {
@@ -38,6 +38,29 @@ bool platformListApps(std::vector<AppEntry>& out) {
     }
     return true;
 }
+// seat monitor stand-ins: --helper 1 pretends the adb helper runs and shows a test picture on the monitor
+static int gFakeHelper = 0;
+int platformHelperState() { return gFakeHelper; }
+int platformMonitorOpen(unsigned tex, int w, int h, int) {
+    if (!gFakeHelper) return -1;
+    std::vector<uint8_t> px((size_t)w * h * 4);
+    for (int y = 0; y < h; y++) for (int x = 0; x < w; x++) {      // a made-up app: blue title bar, cards, a red marker top-left
+        uint8_t* p = &px[((size_t)y * w + x) * 4]; int r = 245, g = 246, b = 248;
+        if (y < 90) { r = 32; g = 92; b = 200; }
+        else if (((x - 40) % 400) < 360 && ((y - 130) % 280) < 240 && x > 40 && y > 130) { r = 220; g = 226; b = 236; if (((y - 130) % 280) < 140) { r = 120 + (x % 400) / 4; g = 150; b = 190; } }
+        if (x < 120 && y < 90) { r = 230; g = 60; b = 50; }
+        p[0] = (uint8_t)r; p[1] = (uint8_t)g; p[2] = (uint8_t)b; p[3] = 255;
+    }
+    glBindTexture(GL_TEXTURE_2D, tex);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, px.data());
+    return 7;
+}
+bool platformMonitorLaunch(const std::string& pkg) { LOGI("monitor: launch %s", pkg.c_str()); return true; }
+void platformMonitorTouch(int a, float x, float y) { LOGI("monitor: touch %d %.0f %.0f", a, x, y); }
+void platformMonitorScroll(float, float, float) {}
+void platformMonitorKey(int k) { LOGI("monitor: key %d", k); }
+void platformMonitorClose() {}
+bool platformMonitorUpdate(float m[16]) { for (int k = 0; k < 16; k++) m[k] = (k % 5 == 0) ? 1.f : 0.f; m[5] = -1; m[13] = 1; return gFakeHelper != 0; }
 bool platformLaunchApp(const std::string& pkg, const std::string&, const std::string& text) { LOGI("would launch %s (%s)", pkg.c_str(), text.c_str()); return true; }
 
 static Quat quatYawPitch(float yaw, float pitch) {
@@ -46,14 +69,14 @@ static Quat quatYawPitch(float yaw, float pitch) {
 }
 int main(int argc, char** argv) {
     double km = 60; float yaw = 0, pitch = 0, clock = 14, scale = 1, fov = 100; int W = 1280, H = 1280, mono = 1, month = 11, frames = 0; std::string out = "/tmp/shot.png"; int phase = PH_RIDE;
-    float ex = 0, ey = 0, ez = 0; float cloud = 0.35f; int both = 0; int seatArg = 0, busArg = 1, hudArg = 0, menuArg = 0, simulate = 0, appsPage = -1; double awayMin = -1;
+    float ex = 0, ey = 0, ez = 0; float cloud = 0.35f; int both = 0; int seatArg = 0, busArg = 1, hudArg = 0, menuArg = 0, simulate = 0, appsPage = -1, monArg = -1; double awayMin = -1;
     for (int i = 1; i + 1 < argc; i += 2) {
         std::string k = argv[i]; const char* v = argv[i + 1];
         if (k == "--km") km = atof(v); else if (k == "--yaw") yaw = atof(v); else if (k == "--pitch") pitch = atof(v); else if (k == "--clock") clock = atof(v);
         else if (k == "--out") out = v; else if (k == "--w") W = atoi(v); else if (k == "--h") H = atoi(v); else if (k == "--fov") fov = atof(v);
         else if (k == "--month") month = atoi(v); else if (k == "--assets") gAssetDir = v; else if (k == "--frames") frames = atoi(v); else if (k == "--scale") scale = atof(v);
         else if (k == "--ex") ex = atof(v); else if (k == "--ey") ey = atof(v); else if (k == "--ez") ez = atof(v); else if (k == "--cloud") cloud = atof(v);
-        else if (k == "--phase") phase = atoi(v); else if (k == "--seat") seatArg = atoi(v); else if (k == "--bus") busArg = atoi(v); else if (k == "--hud") hudArg = atoi(v); else if (k == "--simulate") simulate = atoi(v); else if (k == "--away") awayMin = atof(v); else if (k == "--apps") appsPage = atoi(v); else if (k == "--menu") menuArg = atoi(v); else if (k == "--both") both = atoi(v);
+        else if (k == "--phase") phase = atoi(v); else if (k == "--seat") seatArg = atoi(v); else if (k == "--bus") busArg = atoi(v); else if (k == "--hud") hudArg = atoi(v); else if (k == "--simulate") simulate = atoi(v); else if (k == "--away") awayMin = atof(v); else if (k == "--apps") appsPage = atoi(v); else if (k == "--helper") gFakeHelper = atoi(v); else if (k == "--monitor") monArg = atoi(v); else if (k == "--menu") menuArg = atoi(v); else if (k == "--both") both = atoi(v);
     }
     EGLDisplay dpy = eglGetPlatformDisplay(EGL_PLATFORM_SURFACELESS_MESA, EGL_DEFAULT_DISPLAY, nullptr);
     EGLint ma, mi; if (!eglInitialize(dpy, &ma, &mi)) { LOGE("egl init failed"); return 1; }
@@ -104,6 +127,15 @@ int main(int argc, char** argv) {
         bool moved = app.onWake();
         LOGI("away %.0f min -> moved=%d now %.1f km phase=%d banner=%s", awayMin, moved, app.s / 1000, app.phase, app.banner.c_str());
         app.update(in, true);
+    }
+    if (monArg >= 0) {        // seat monitor: 0 app list, 1 an app running, 2 helper instructions
+        app.menuOpen = false; app.monShown = true; app.requestApps();
+        while (app.appsLoading) { app.pollApps(); std::this_thread::sleep_for(std::chrono::milliseconds(5)); }
+        app.monHelperCheck = -100; app.update(in, true);
+        if (monArg == 1) app.monOpenApp(app.monApps().empty() ? 0 : app.monApps()[1]);
+        if (monArg == 2) { app.monPick = 0; app.monMode = 2; }
+        app.update(in, true);
+        app.monHover = monArg == 1 ? 2 : 100 + 1; app.monBuild();
     }
     auto t1 = std::chrono::steady_clock::now();
     for (int fr = 0; fr < frames; fr++) { in.dt = 1.0 / 72; app.update(in, true); }

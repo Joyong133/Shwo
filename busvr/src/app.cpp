@@ -11,13 +11,14 @@ bool App::init() {
     bus.build();
     setSeat(seat);
     initTraffic();
+    monInit();
     audio.start();
     loadSave();
     s = 0; computeBusPose(0);
     if (tryAutoResume()) computeBusPose(0);     // came back from another app: the bus has driven on meanwhile
     return true;
 }
-void App::shutdown() { if (appsThread.joinable()) appsThread.join(); audio.stop(); world.shutdown(); }
+void App::shutdown() { if (monDisplay >= 0) platformMonitorClose(); if (appsThread.joinable()) appsThread.join(); audio.stop(); world.shutdown(); }
 void App::onPause() { if (dirty && phase == PH_RIDE && timeSec - lastSave > 3.0) { lastSave = timeSec; writeSave(); } }
 
 Vec3 App::seatEye() const { return bus.eye(bus.choices[seat % (int)bus.choices.size()]); }
@@ -140,6 +141,8 @@ void App::update(const AppInput& in, bool blockingLoad) {
     dispTimer += in.dt;
     if (dispTimer > 0.5) { dispTimer = 0; buildDisplays(); }
     if (menuOpen) buildMenu();
+    monTick();
+    if (monShown) monBuild();
     saveTimer += in.dt;
     if (phase == PH_RIDE && saveTimer > 15) { saveTimer = 0; writeSave(); }
 }
@@ -175,6 +178,7 @@ void App::render(StereoTarget& rt, GLuint colorTex, const AppInput& in) {
             ren.drawLit(bus.opaque, busMat, ren.texInterior, 2.f);
             ren.drawLit(passengers, busMat, ren.texInterior, 2.f);
             ren.drawLit(dispBg, busMat, ren.texInterior, 2.f);
+            monDrawOpaque(busMat * seatBase);
         }
         ren.drawWorldOpaque(world, env, busPos, headFwd);
         drawTraffic(headFwd);
@@ -201,13 +205,14 @@ void App::render(StereoTarget& rt, GLuint colorTex, const AppInput& in) {
         }
         Mat4 seatWorld = busMat * seatBase;
         glDisable(GL_CULL_FACE);
+        if (showBus) monDrawOverlay(seatWorld);
         if (hud && !menuOpen) { ren.drawLit(hudBg, seatWorld, ren.texInterior, 2.f); ren.drawText(hudText, seatWorld, font); }
         if (menuOpen) {
             ren.drawLit(uiBg, seatWorld, ren.texInterior, 2.f);
             if (appsTex && uiIcons.valid()) ren.drawLit(uiIcons, seatWorld, appsTex, 1.f);
             ren.drawText(uiText, seatWorld, font);
-            ren.drawLit(pointerMesh, seatWorld, ren.texInterior, 2.f);
         }
+        ren.drawLit(pointerMesh, seatWorld, ren.texInterior, 2.f);
         glEnable(GL_CULL_FACE);
         glDisable(GL_BLEND); glDepthMask(GL_TRUE);
         rt.resolve(colorTex, pass);

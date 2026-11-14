@@ -11,17 +11,24 @@ import android.content.pm.PackageManager;
 import android.content.pm.ResolveInfo;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
+import android.graphics.SurfaceTexture;
 import android.graphics.Paint;
 import android.graphics.RectF;
 import android.graphics.Typeface;
 import android.graphics.drawable.Drawable;
 import android.os.Build;
+import android.os.Bundle;
+import android.os.IBinder;
+import android.os.Parcel;
+import android.view.Surface;
 import android.text.Layout;
 import android.text.StaticLayout;
 import android.text.TextPaint;
 import android.text.TextUtils;
 import android.util.Log;
 
+import java.io.File;
+import java.io.FileOutputStream;
 import java.text.Collator;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -45,6 +52,132 @@ public class BusActivity extends NativeActivity {
     // Built-in apps worth offering on a long ride.
     private static final Set<String> SYSTEM_OK = new HashSet<>(Arrays.asList(
             "com.oculus.browser", "com.oculus.tv", "com.meta.tv", "com.oculus.gallery", "com.oculus.photos"));
+
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        writeHelperScript();
+    }
+
+    /** start.sh for the seat-monitor helper; run it from adb once per headset boot. */
+    private void writeHelperScript() {
+        try {
+            File dir = getExternalFilesDir(null);
+            if (dir == null) return;
+            String apk = getApplicationInfo().sourceDir;
+            String sh = "#!/system/bin/sh\n"
+                    + "# Seoul-Busan bus VR: seat-monitor helper. Run once per headset boot:\n"
+                    + "#   adb shell sh /sdcard/Android/data/" + getPackageName() + "/files/start.sh\n"
+                    + "APK=\"" + apk + "\"\n"
+                    + "pkill -f busvr_seat_helper >/dev/null 2>&1\n"
+                    + "if command -v setsid >/dev/null 2>&1; then RUN=setsid; else RUN=; fi\n"
+                    + "CLASSPATH=\"$APK\" $RUN nohup app_process /system/bin --nice-name=busvr_seat_helper kr.busvr.seoulbusan.SeatHelper >/dev/null 2>&1 &\n"
+                    + "sleep 2\n"
+                    + "if pgrep -f busvr_seat_helper >/dev/null 2>&1; then echo 'OK: seat monitor helper is running'; else echo 'FAILED: helper did not start'; fi\n";
+            FileOutputStream out = new FileOutputStream(new File(dir, "start.sh"));
+            out.write(sh.getBytes("UTF-8"));
+            out.close();
+        } catch (Exception e) {
+            Log.w(TAG, "start.sh", e);
+        }
+    }
+
+    // ------------------------------------------------------------------ seat monitor (talks to SeatHelper)
+    private static final int T_PING = 1, T_OPEN = 2, T_LAUNCH = 3, T_TOUCH = 4, T_SCROLL = 5, T_KEY = 6, T_CLOSE = 7;
+    private SurfaceTexture monTex; private Surface monSurface; private int monDisplay = -1;
+    private volatile boolean monFrame = false;
+    private final android.os.Binder monToken = new android.os.Binder();
+
+    /** 1 when the adb helper is connected and alive. */
+    public int helperState() {
+        IBinder b = SeatLink.helper;
+        if (b == null) return 0;
+        if (!b.isBinderAlive() || !b.pingBinder()) { SeatLink.helper = null; monDisplay = -1; return 0; }
+        return 1;
+    }
+
+    private boolean transact(int code, Parcel d, Parcel r, boolean oneway) {
+        IBinder b = SeatLink.helper;
+        if (b == null) return false;
+        try {
+            return b.transact(code, d, r, oneway ? IBinder.FLAG_ONEWAY : 0);
+        } catch (Exception e) {
+            Log.w(TAG, "seat helper call " + code, e);
+            return false;
+        }
+    }
+
+    /** Creates (once) the texture-backed surface and the helper's virtual display drawing into it. Returns the display id or -1. */
+    public int monitorOpen(int glTexture, int w, int h, int dpi) {
+        if (monDisplay >= 0 && helperState() == 1) return monDisplay;
+        if (helperState() != 1) return -1;
+        if (monTex == null) {
+            monTex = new SurfaceTexture(glTexture);
+            monTex.setDefaultBufferSize(w, h);
+            monTex.setOnFrameAvailableListener(new SurfaceTexture.OnFrameAvailableListener() {
+                @Override public void onFrameAvailable(SurfaceTexture t) { monFrame = true; }
+            });
+            monSurface = new Surface(monTex);
+        }
+        Parcel d = Parcel.obtain(), r = Parcel.obtain();
+        try {
+            monSurface.writeToParcel(d, 0);
+            d.writeInt(w); d.writeInt(h); d.writeInt(dpi);
+            d.writeStrongBinder(monToken);
+            monDisplay = transact(T_OPEN, d, r, false) ? r.readInt() : -1;
+        } catch (Exception e) {
+            Log.w(TAG, "monitorOpen", e);
+            monDisplay = -1;
+        } finally { d.recycle(); r.recycle(); }
+        return monDisplay;
+    }
+
+    public boolean monitorLaunch(String pkg) {
+        if (monDisplay < 0) return false;
+        Intent i = launchIntent(getPackageManager(), pkg);
+        if (i == null || i.getComponent() == null) return false;
+        Parcel d = Parcel.obtain(), r = Parcel.obtain();
+        try {
+            d.writeInt(monDisplay); d.writeString(i.getComponent().flattenToString()); d.writeString(pkg);
+            return transact(T_LAUNCH, d, r, false) && r.readInt() == 1;
+        } finally { d.recycle(); r.recycle(); }
+    }
+
+    public void monitorTouch(int action, float x, float y) {
+        if (monDisplay < 0) return;
+        Parcel d = Parcel.obtain();
+        try { d.writeInt(monDisplay); d.writeInt(action); d.writeFloat(x); d.writeFloat(y); transact(T_TOUCH, d, null, true); } finally { d.recycle(); }
+    }
+
+    public void monitorScroll(float x, float y, float v) {
+        if (monDisplay < 0) return;
+        Parcel d = Parcel.obtain();
+        try { d.writeInt(monDisplay); d.writeFloat(x); d.writeFloat(y); d.writeFloat(v); transact(T_SCROLL, d, null, true); } finally { d.recycle(); }
+    }
+
+    public void monitorKey(int keyCode) {
+        if (monDisplay < 0) return;
+        Parcel d = Parcel.obtain();
+        try { d.writeInt(monDisplay); d.writeInt(keyCode); transact(T_KEY, d, null, true); } finally { d.recycle(); }
+    }
+
+    public void monitorClose() {
+        Parcel d = Parcel.obtain(), r = Parcel.obtain();
+        try { transact(T_CLOSE, d, r, false); } finally { d.recycle(); r.recycle(); }
+        monDisplay = -1;
+    }
+
+    /** Latches the newest frame into the GL texture (call on the GL thread). Returns true once any frame has arrived. */
+    public boolean monitorUpdate(float[] matrix) {
+        if (monTex == null) return false;
+        try {
+            monTex.updateTexImage();
+            monTex.getTransformMatrix(matrix);
+        } catch (Exception e) {
+            return false;
+        }
+        return monFrame;
+    }
 
     @Override
     protected void onResume() {
@@ -81,7 +214,7 @@ public class BusActivity extends NativeActivity {
         }
     }
 
-    /** One entry per app that can be opened: "package \t label \t 1 if sideloaded APK else 0". Sideloaded apps first. */
+    /** One entry per app that can be opened: "package \t label \t apk(1/0) \t vr(1/0)". Sideloaded apps first. */
     public String[] queryApps() {
         PackageManager pm = getPackageManager();
         List<ApplicationInfo> all;
@@ -102,12 +235,20 @@ public class BusActivity extends NativeActivity {
             } catch (Exception e) {
                 continue;
             }
+            boolean vr = false;
+            try {
+                Intent q = new Intent(Intent.ACTION_MAIN).addCategory(VR_CATEGORY).setPackage(pkg);
+                List<ResolveInfo> r = pm.queryIntentActivities(q, 0);
+                vr = r != null && !r.isEmpty();
+                ApplicationInfo full = pm.getApplicationInfo(pkg, PackageManager.GET_META_DATA);
+                if (full.metaData != null && "vr_only".equals(full.metaData.getString("com.samsung.android.vr.application.mode"))) vr = true;
+            } catch (Exception ignored) { }
             String inst = installerOf(pm, pkg);
             boolean store = inst != null && (inst.startsWith("com.oculus") || inst.startsWith("com.meta") || inst.equals("com.android.vending"));
             boolean apk = !system && !store;
             String label = String.valueOf(pm.getApplicationLabel(ai)).replace('\t', ' ').replace('\n', ' ').trim();
             if (label.isEmpty()) label = pkg;
-            rows.add(new String[]{pkg, label, apk ? "1" : "0"});
+            rows.add(new String[]{pkg, label, apk ? "1" : "0", vr ? "1" : "0"});
         }
         final Collator col = Collator.getInstance(Locale.KOREAN);
         Collections.sort(rows, new Comparator<String[]>() {
@@ -118,7 +259,7 @@ public class BusActivity extends NativeActivity {
             }
         });
         String[] out = new String[rows.size()];
-        for (int k = 0; k < out.length; k++) out[k] = rows.get(k)[0] + "\t" + rows.get(k)[1] + "\t" + rows.get(k)[2];
+        for (int k = 0; k < out.length; k++) out[k] = rows.get(k)[0] + "\t" + rows.get(k)[1] + "\t" + rows.get(k)[2] + "\t" + rows.get(k)[3];
         return out;
     }
 

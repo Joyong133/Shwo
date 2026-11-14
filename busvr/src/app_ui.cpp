@@ -33,7 +33,7 @@ void App::click(int id) {
     audio.trigger(AE_TICK);
     if (menuPage == 1 && appsClick(*this, id)) return;
     switch (id) {
-        case B_APPS: menuPage = 1; appsPage = 0; requestApps(); break;
+        case B_APPS: if (phase == PH_RIDE) { monShown = !monShown; menuOpen = false; } else { menuPage = 1; appsPage = 0; requestApps(); } break;
         case B_DEP_L: departSel = (departSel + 7) % 8; break;
         case B_DEP_R: departSel = (departSel + 1) % 8; break;
         case B_SEAT_L: setSeat(seat - 1); break;
@@ -83,7 +83,7 @@ void App::handleInput(const AppInput& in) {
     }
     prevTrig[0] = trig[0]; prevTrig[1] = trig[1];
     bool a = in.hand[0].btnA || in.hand[1].btnA, b = in.hand[0].btnB || in.hand[1].btnB;
-    if (a && !prevA) { hud = !hud; audio.trigger(AE_TICK); dispTimer = 1e9; }
+    if (a && !prevA) { monShown = !monShown; audio.trigger(AE_TICK); }
     if (((b && !prevB) || (in.menu && !prevMenu)) && phase == PH_RIDE) { menuOpen = !menuOpen; menuPage = 0; audio.trigger(AE_TICK); }
     prevA = a; prevB = b; prevMenu = in.menu;
     float sx = fabsf(in.hand[0].stickX) > fabsf(in.hand[1].stickX) ? in.hand[0].stickX : in.hand[1].stickX;
@@ -91,12 +91,21 @@ void App::handleInput(const AppInput& in) {
     if (st != prevStick && st != 0) { seatYaw -= st * radf(30.f); if (seatYaw > PI) seatYaw -= 2 * PI; if (seatYaw < -PI) seatYaw += 2 * PI; }
     prevStick = st;
     if (phase != PH_RIDE) menuOpen = true;
+    if (!menuOpen && monShown) monInput(in);
+    else {
+        monRayLen[0] = monRayLen[1] = -1.f; monHover = -1;
+        if (monTouching) { platformMonitorTouch(1, monTX, monTY); monTouching = false; monTouchHand = -1; }
+        monPrevTrig[0] = in.hand[0].trigger > 0.55f; monPrevTrig[1] = in.hand[1].trigger > 0.55f;
+    }
 
     // pointer visuals (seat frame)
     MeshData pm; pm.mat = MAT_UI; pm.layer = -1;
-    if (menuOpen) for (int h = 0; h < 2; h++) {
+    for (int h = 0; h < 2; h++) {
+        bool onMon = !menuOpen && monRayLen[h] > 0;
+        if (!menuOpen && !onMon) continue;
         if (!rayOn[h] && !(gaze && h == 0)) continue;
-        Vec3 o = rayO[h], e = o + rayD[h] * rayLen[h];
+        float len = onMon ? monRayLen[h] : rayLen[h];
+        Vec3 o = rayO[h], e = o + rayD[h] * len;
         if (rayOn[h]) {
             Vec3 side = normalize(cross(rayD[h], Vec3(0, 1, 0))) * 0.0018f, upv = normalize(cross(side, rayD[h])) * 0.0018f;
             pm.color(0xffffff, 150);
@@ -104,9 +113,9 @@ void App::handleInput(const AppInput& in) {
             pm.color(0x30343a, 255);
             pm.roundBox(yaw * Mat4::fromQuat(in.hand[h].rot, in.hand[h].pos), Vec3(-0.018f, -0.018f, -0.01f), Vec3(0.018f, 0.018f, 0.09f), 0.012f, 1);
         }
-        if (rayLen[h] < 1.19f) {
-            float r = gaze ? 0.006f + 0.01f * sat(gazeT / 1.4f) : 0.006f;
-            pm.color(hover >= 0 ? 0xffc84a : 0xffffff, 255);
+        if (onMon || rayLen[h] < 1.19f) {
+            float r = onMon ? 0.004f : (gaze ? 0.006f + 0.01f * sat(gazeT / 1.4f) : 0.006f);
+            pm.color((onMon ? (monHover >= 0 || (monTouching && monTouchHand == h)) : hover >= 0) ? 0xffc84a : 0xffffff, 255);
             Vec3 c = e + Vec3(0, 0, 0.004f);
             pm.quad(c + Vec3(-r, -r, 0), c + Vec3(r, -r, 0), c + Vec3(r, r, 0), c + Vec3(-r, r, 0));
         }
@@ -144,7 +153,6 @@ void App::buildMenu() {
     }
     uiIcons.destroy();
     button(B_RECENTER, 0.30f, 0.285f, 0.47f, 0.33f, "자리 맞추기", 0.022f, 0x25344c);
-    if (phase == PH_MENU) button(B_APPS, -0.47f, 0.285f, -0.27f, 0.33f, "다른 앱 쓰기", 0.022f, 0x25344c);
     if (phase == PH_MENU) {
         text("서울 → 부산 고속버스", 0, 0.255f, 0.066f, 0xffffff);
         text("서울고속버스터미널(경부) → 부산종합버스터미널", 0, 0.195f, 0.030f, 0xc9d4e6);
@@ -158,7 +166,7 @@ void App::buildMenu() {
             snprintf(buf, sizeof(buf), "이어서 타기 · %dkm 지점", (int)(saved.s / 1000));
             button(B_RESUME, 0.03f, -0.275f, 0.45f, -0.185f, buf, 0.034f, 0x35507a);
         } else button(B_START, -0.22f, -0.275f, 0.22f, -0.185f, "출발", 0.046f, 0x2f6f4a);
-        text("편하게 앉은 뒤 출발을 누르세요 · 트리거: 선택 · 스틱 좌우: 방향 전환 · B/Y: 메뉴 · A/X: 안내판", 0, -0.335f, 0.020f, 0x7f8da3);
+        text("편하게 앉은 뒤 출발을 누르세요 · 트리거: 선택 · 스틱 좌우: 방향 전환 · B/Y: 메뉴 · A/X: 좌석 모니터", 0, -0.335f, 0.020f, 0x7f8da3);
     } else if (phase == PH_RIDE) {
         text("운행 중", 0, 0.255f, 0.056f, 0xffffff);
         snprintf(buf, sizeof(buf), "%s · 시속 %dkm", R.regionAt(s), (int)lroundf(speed * 3.6f));
@@ -171,9 +179,9 @@ void App::buildMenu() {
         text("안내판", -0.45f, -0.122f, 0.034f, 0x9fb0c8, 0);
         button(B_HUD, -0.17f, -0.14f, 0.45f, -0.075f, hud ? "켜짐 (눌러서 끄기)" : "꺼짐 (눌러서 켜기)", 0.032f);
         button(B_CLOSE, -0.45f, -0.275f, -0.17f, -0.185f, "계속 타기", 0.038f, 0x2f6f4a);
-        button(B_APPS, -0.14f, -0.275f, 0.16f, -0.185f, "다른 앱 쓰기", 0.032f, 0x35507a);
+        button(B_APPS, -0.14f, -0.275f, 0.16f, -0.185f, monShown ? "좌석 모니터 접기" : "좌석 모니터 펴기", 0.030f, 0x35507a);
         button(B_END, 0.19f, -0.275f, 0.45f, -0.185f, "여행 끝내기", 0.032f, 0x6a3a3a);
-        text("다른 앱을 쓰는 동안에도 버스는 달립니다 · 여행 끝내기는 그 자리에 세워 두고 저장합니다", 0, -0.335f, 0.020f, 0x7f8da3);
+        text("좌석 앞 모니터에서 헤드셋의 APK 앱을 쓸 수 있습니다 (A/X: 모니터 접기·펴기)", 0, -0.335f, 0.020f, 0x7f8da3);
     } else {
         text("부산 도착", 0, 0.22f, 0.07f, 0xffffff);
         text("부산종합버스터미널 (노포동)", 0, 0.14f, 0.036f, 0xc9d4e6);

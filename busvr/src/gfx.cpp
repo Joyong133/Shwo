@@ -162,13 +162,13 @@ static GLuint compile(GLenum type, const std::string& src, const char* name) {
     if (!ok) { char log[4096]; glGetShaderInfoLog(s, sizeof(log), nullptr, log); LOGE("shader %s (%s) failed:\n%s", name, type == GL_VERTEX_SHADER ? "vs" : "fs", log); }
     return s;
 }
-bool Shader::build(const char* name, const char* vs, const char* fs) {
+bool Shader::build(const char* name, const char* vs, const char* fs, const char* fsPreamble) {
     bool mv = Gfx::get().multiview;
     std::string hv = "#version 300 es\n";
     if (mv) hv += "#extension GL_OVR_multiview2 : require\nlayout(num_views=2) in;\n#define VIEW gl_ViewID_OVR\n";
     std::string common = std::string("precision highp float;\nprecision highp int;\nprecision mediump sampler2DArray;\n") + kFrameBlock;
     if (!mv) common += "#define VIEW uint(uMisc.w)\n";
-    std::string hf = "#version 300 es\n";
+    std::string hf = std::string("#version 300 es\n") + fsPreamble;
     GLuint v = compile(GL_VERTEX_SHADER, hv + common + vs, name);
     GLuint f = compile(GL_FRAGMENT_SHADER, hf + common + fs, name);
     prog = glCreateProgram(); glAttachShader(prog, v); glAttachShader(prog, f);
