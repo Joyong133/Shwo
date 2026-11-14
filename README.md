@@ -56,4 +56,4 @@ WebXR은 **HTTPS 주소**에서만 동작합니다.
 
 ## 이 저장소의 다른 앱
 
-- [`body-morph/`](body-morph/) — **체형 비교**: 성인 남녀 평균 체형의 차이를 3D 마네킹으로 보여 주는 교육용 Android 앱 (APK: [`body-morph/dist/body-morph-1.3.apk`](body-morph/dist/body-morph-1.3.apk))
+- [`body-morph/`](body-morph/) — **체형 비교**: 성인 남녀 평균 체형의 차이를 3D 마네킹으로 보여 주는 교육용 Android 앱 (APK: [`body-morph/dist/body-morph-1.4.apk`](body-morph/dist/body-morph-1.4.apk))

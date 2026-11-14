@@ -118,8 +118,37 @@
   var ext = { B: 0, W: 0, H: 0 };                  // individual variation past the female average: bust, waist, hips
   var view = { yaw: -0.42, pitch: 0.10, zoom: 1, panY: 0 };
   var HOME = { yaw: -0.42, pitch: 0.10, zoom: 1, panY: 0 };
-  var ui = { guides: true, hair: true, clothes: true, spin: false, playing: false, dir: 1, hold: 0, topic: null };
+  var ui = { guides: true, hair: true, clothes: true, spin: false, playing: false, dir: 1, hold: 0, p: 0, topic: null };
   var dirtyShape = true, dirtyView = true, raf = 0, lastT = 0, insetTop = 0;
+
+  // ───────────── playback settings ─────────────
+  // dur: seconds for one pass between the two ends; ease: 'smooth' (slow at both ends) or 'linear';
+  // loop: back and forth, or one pass and stop; hold: seconds to rest at each end while looping.
+  var PLAY_DEFAULT = { dur: 6, ease: 'smooth', loop: true, hold: 1 };
+  var DUR_MIN = 0.5, DUR_MAX = 120;
+  var play = (function () {
+    var o = { dur: PLAY_DEFAULT.dur, ease: PLAY_DEFAULT.ease, loop: PLAY_DEFAULT.loop, hold: PLAY_DEFAULT.hold };
+    try {
+      var saved = JSON.parse(localStorage.getItem('playSettings') || 'null');
+      if (saved) {
+        if (isFinite(saved.dur)) o.dur = clampDur(saved.dur);
+        if (saved.ease === 'linear' || saved.ease === 'smooth') o.ease = saved.ease;
+        if (typeof saved.loop === 'boolean') o.loop = saved.loop;
+        if (isFinite(saved.hold)) o.hold = Math.max(0, Math.min(5, Math.round(saved.hold * 2) / 2));
+      }
+    } catch (e) { /* storage unavailable: defaults */ }
+    return o;
+  })();
+  function clampDur(d) { return Math.max(DUR_MIN, Math.min(DUR_MAX, Math.round(d * 10) / 10)); }
+  function savePlay() { try { localStorage.setItem('playSettings', JSON.stringify(play)); } catch (e) { /* ignore */ } }
+  // progress p (0…1, time-linear) → blend value, and back
+  function ease(p) { return play.ease === 'linear' ? p : (1 - Math.cos(Math.PI * p)) / 2; }
+  function uneased(v) { v = Math.max(0, Math.min(1, v)); return play.ease === 'linear' ? v : Math.acos(1 - 2 * v) / Math.PI; }
+  function fmtSec(t) {
+    if (t >= 60 && Math.abs(t % 60) < 1e-9) return (t / 60) + '분';
+    if (t >= 60) return Math.floor(t / 60) + '분 ' + fmtSec(Math.round((t % 60) * 10) / 10);
+    return (Math.abs(t - Math.round(t)) < 1e-9 ? String(Math.round(t)) : t.toFixed(1)) + '초';
+  }
 
   var mean = function () { return (w.S + w.F + w.M) / 3; };
   var lerp = function (a, b, t) { return a + (b - a) * t; };
@@ -663,8 +692,65 @@
   function setPlaying(on) {
     ui.playing = on; $('btnPlay').classList.toggle('on', on);
     $('btnPlay').setAttribute('aria-label', on ? '일시정지' : '변화 재생');
-    if (on) { var m = mean(); setAll(m); ui.dir = m > 0.995 ? -1 : 1; ui.hold = 0; }
+    if (on) {
+      var m = mean(); setAll(m);
+      ui.dir = m > 0.995 ? -1 : 1;                 // from the female end it plays back toward the male end
+      ui.p = uneased(m); ui.hold = 0;
+      lastT = performance.now();                   // the first frame counts the time since the press
+    }
     kick();
+  }
+
+  // ───────────── playback-speed sheet ─────────────
+  // slider: 0.5 s … 2 min on a log scale, snapped to steps that suit the size of the number
+  function rangeToDur(x) { var d = DUR_MIN * Math.pow(DUR_MAX / DUR_MIN, x / 1000); return d < 10 ? Math.round(d * 2) / 2 : d < 60 ? Math.round(d) : Math.round(d / 5) * 5; }
+  function durToRange(d) { return Math.round(1000 * Math.log(d / DUR_MIN) / Math.log(DUR_MAX / DUR_MIN)); }
+  function stepFor(d, up) { return up ? (d < 10 ? 0.5 : d < 60 ? 1 : 5) : (d <= 10 ? 0.5 : d <= 60 ? 1 : 5); }
+  function syncSpeed() {
+    $('speedLabel').textContent = fmtSec(play.dur);
+    $('btnSpeed').setAttribute('aria-label', '재생 속도: 한 번에 ' + fmtSec(play.dur) + '. 눌러서 바꾸기');
+    var inp = $('durInput');
+    if (document.activeElement !== inp) inp.value = String(play.dur);
+    $('durRange').value = durToRange(play.dur);
+    $('durDown').disabled = play.dur <= DUR_MIN; $('durUp').disabled = play.dur >= DUR_MAX;
+    Array.prototype.forEach.call($('durPresets').children, function (b) { b.setAttribute('aria-pressed', String(+b.dataset.s === play.dur)); });
+    Array.prototype.forEach.call($('easeSeg').children, function (b) { b.setAttribute('aria-checked', String(b.dataset.v === play.ease)); });
+    Array.prototype.forEach.call($('loopSeg').children, function (b) { b.setAttribute('aria-checked', String((b.dataset.v === 'loop') === play.loop)); });
+    $('holdRange').value = Math.round(play.hold * 2); $('holdOut').textContent = fmtSec(play.hold);
+    $('holdField').classList.toggle('off', !play.loop);
+    $('speedSummary').textContent = play.loop
+      ? '남성 평균 → 여성 평균 ' + fmtSec(play.dur) + ', 다시 남성 평균까지 돌아오는 한 바퀴는 ' + fmtSec(Math.round((2 * play.dur + 2 * play.hold) * 10) / 10) + '입니다.'
+      : '재생을 누를 때마다 ' + fmtSec(play.dur) + ' 동안 반대쪽 끝까지 바뀌고 멈춥니다.';
+  }
+  function setPlay(changes) {
+    var easeBefore = play.ease;
+    for (var k in changes) play[k] = changes[k];
+    play.dur = clampDur(play.dur);
+    if (play.ease !== easeBefore) ui.p = uneased(mean());     // keep the figure where it is when the curve changes
+    savePlay(); syncSpeed();
+  }
+  function bindSpeed() {
+    var sheet = $('speedSheet'), inp = $('durInput');
+    var open = function () { syncSpeed(); sheet.hidden = false; };
+    var close = function () { if (document.activeElement === inp) inp.blur(); sheet.hidden = true; };
+    $('btnSpeed').addEventListener('click', open);
+    $('speedClose').addEventListener('click', close);
+    sheet.addEventListener('click', function (e) { if (e.target === sheet) close(); });
+    $('speedReset').addEventListener('click', function () { setPlay({ dur: PLAY_DEFAULT.dur, ease: PLAY_DEFAULT.ease, loop: PLAY_DEFAULT.loop, hold: PLAY_DEFAULT.hold }); });
+    // typed value: applied as soon as it is a number in range, tidied up when the field is left
+    inp.addEventListener('input', function () { var v = parseFloat(inp.value); if (isFinite(v) && v >= DUR_MIN && v <= DUR_MAX) setPlay({ dur: v }); });
+    inp.addEventListener('change', function () { var v = parseFloat(inp.value); if (isFinite(v)) setPlay({ dur: v }); inp.value = String(play.dur); });
+    inp.addEventListener('blur', function () { inp.value = String(play.dur); });
+    inp.addEventListener('keydown', function (e) { if (e.key === 'Enter') inp.blur(); });
+    $('durDown').addEventListener('click', function () { setPlay({ dur: play.dur - stepFor(play.dur, false) }); });
+    $('durUp').addEventListener('click', function () { setPlay({ dur: play.dur + stepFor(play.dur, true) }); });
+    $('durRange').addEventListener('input', function (e) { setPlay({ dur: rangeToDur(+e.target.value) }); });
+    Array.prototype.forEach.call($('durPresets').children, function (b) { b.addEventListener('click', function () { setPlay({ dur: +b.dataset.s }); }); });
+    Array.prototype.forEach.call($('easeSeg').children, function (b) { b.addEventListener('click', function () { setPlay({ ease: b.dataset.v }); }); });
+    Array.prototype.forEach.call($('loopSeg').children, function (b) { b.addEventListener('click', function () { setPlay({ loop: b.dataset.v === 'loop' }); }); });
+    $('holdRange').addEventListener('input', function (e) { setPlay({ hold: +e.target.value / 2 }); });
+    syncSpeed();
+    return close;
   }
 
   function bind() {
@@ -682,6 +768,7 @@
     });
     $('xReset').addEventListener('click', function () { ext.B = ext.W = ext.H = 0; dirtyShape = true; kick(); });
     $('btnPlay').addEventListener('click', function () { setPlaying(!ui.playing); });
+    bindSpeed();
     $('btnGuides').addEventListener('click', function (e) { ui.guides = !ui.guides; e.currentTarget.setAttribute('aria-pressed', String(ui.guides)); dirtyView = true; kick(); });
     $('btnHair').addEventListener('click', function (e) { ui.hair = !ui.hair; e.currentTarget.setAttribute('aria-pressed', String(ui.hair)); dirtyView = true; kick(); });
     $('btnClothes').addEventListener('click', function (e) { ui.clothes = !ui.clothes; e.currentTarget.setAttribute('aria-pressed', String(ui.clothes)); dirtyShape = true; kick(); });
@@ -703,7 +790,10 @@
     $('aboutClose').addEventListener('click', closeAbout);
     about.addEventListener('click', function (e) { if (e.target === about) closeAbout(); });
     if (!seen && !/[?&]noabout/.test(location.search)) about.hidden = false;
-    window.__back = function () { if (about.hidden) return false; closeAbout(); return true; };   // Android back key
+    window.__back = function () {                  // Android back key: close an open sheet first
+      if (!$('speedSheet').hidden) { $('speedClose').click(); return true; }
+      if (about.hidden) return false; closeAbout(); return true;
+    };
 
     // orbit: one finger turns, two fingers zoom and slide
     var pts = {}, lastTap = 0, pinch = null;
@@ -744,24 +834,35 @@
     glCanvas.addEventListener('webglcontextlost', function (e) { e.preventDefault(); gl = null; });
     glCanvas.addEventListener('webglcontextrestored', function () { if (initGL()) kick(); });
     if (window.ResizeObserver) new ResizeObserver(resize).observe(stage); else window.addEventListener('resize', resize);
+    // frames stop while the app is hidden; on return, playback carries on from where it was
+    document.addEventListener('visibilitychange', function () { lastT = 0; if (!document.hidden) kick(); });
   }
 
   // ───────────── loop ─────────────
   function kick() { if (!raf) raf = requestAnimationFrame(frame); }
   function frame(now) {
     raf = 0;
-    var dt = Math.min(0.05, lastT ? (now - lastT) / 1000 : 0.016); lastT = now;
+    var raw = lastT ? Math.max(0, now - lastT) / 1000 : 0.016; lastT = now;
+    var dt = Math.min(0.05, raw);
+    // playback follows the clock, so slow frames do not stretch the set time
+    // (time spent in the background is skipped: see the visibilitychange handler)
+    var pdt = Math.min(raw, 5);
     var again = false;
 
     if (ui.playing) {
-      if (ui.hold > 0) { ui.hold -= dt; }
-      else {
-        var v = mean();
-        v += ui.dir * dt * 0.2535 * (0.25 + 3 * v * (1 - v));     // eases in and out, about six seconds per pass
-        if (v >= 1) { v = 1; ui.dir = -1; ui.hold = 1.1; } else if (v <= 0) { v = 0; ui.dir = 1; ui.hold = 1.1; }
-        w.S = w.F = w.M = w.K = v; dirtyShape = true;
+      var t = pdt, stop = false;
+      while (t > 0 && !stop) {
+        if (ui.hold > 0) { var used = Math.min(ui.hold, t); ui.hold -= used; t -= used; continue; }
+        var left = ui.dir > 0 ? 1 - ui.p : ui.p, step = t / play.dur;
+        if (step < left) { ui.p += ui.dir * step; t = 0; }
+        else {                                     // reached an end within this frame
+          ui.p = ui.dir > 0 ? 1 : 0; t -= left * play.dur;
+          if (play.loop) { ui.dir = -ui.dir; ui.hold = play.hold; } else stop = true;
+        }
       }
-      again = true;
+      var v = ease(ui.p);
+      w.S = w.F = w.M = w.K = v; dirtyShape = true;
+      if (stop) { setPlaying(false); ui.dir = -ui.dir; } else again = true;
     }
     if (ui.spin) { view.yaw += dt * 0.45; dirtyView = true; again = true; }
     if (Math.abs(hiAmt - hiTarget) > 0.004) { hiAmt += (hiTarget - hiAmt) * Math.min(1, dt * 9); dirtyView = true; again = true; } else if (hiAmt !== hiTarget) { hiAmt = hiTarget; dirtyView = true; }
@@ -801,6 +902,7 @@
       dirtyShape = dirtyView = true; kick();
     },
     topic: setTopic,
-    get: function () { return { w: { S: w.S, F: w.F, M: w.M, K: w.K }, hair: ui.hair, clothes: ui.clothes, skirt: skirtOn, ext: { B: ext.B, W: ext.W, H: ext.H }, view: { yaw: view.yaw, pitch: view.pitch, zoom: view.zoom }, playing: ui.playing, guides: ui.guides, spin: ui.spin, topic: ui.topic }; }
+    play: function (o) { setPlay(o); },
+    get: function () { return { w: { S: w.S, F: w.F, M: w.M, K: w.K }, hair: ui.hair, clothes: ui.clothes, skirt: skirtOn, ext: { B: ext.B, W: ext.W, H: ext.H }, view: { yaw: view.yaw, pitch: view.pitch, zoom: view.zoom }, playing: ui.playing, p: ui.p, dir: ui.dir, settings: { dur: play.dur, ease: play.ease, loop: play.loop, hold: play.hold }, guides: ui.guides, spin: ui.spin, topic: ui.topic }; }
   };
 })();

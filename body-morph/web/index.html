@@ -45,6 +45,10 @@
         <div class="ends"><span class="end-a">남성 평균</span><span class="end-b">여성 평균</span></div>
         <input type="range" id="master" min="0" max="1000" value="0" aria-label="남성 평균에서 여성 평균으로">
       </div>
+      <button class="speed-btn" id="btnSpeed" aria-haspopup="dialog" aria-label="재생 속도 설정">
+        <svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true"><circle cx="12" cy="13.5" r="7.8" fill="none" stroke="currentColor" stroke-width="1.9"/><path d="M12 9.2v4.3l2.7 1.8M9.6 2.9h4.8" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <span id="speedLabel">6초</span>
+      </button>
     </div>
 
     <div class="tabs" role="tablist">
@@ -117,6 +121,53 @@
       <li>모형은 생식기 등 세부 구조를 생략한 마네킹입니다.</li>
     </ul>
     <button class="primary" id="aboutClose">확인</button>
+  </div>
+</div>
+
+<div class="sheet light" id="speedSheet" hidden>
+  <div class="sheet-body" role="dialog" aria-modal="true" aria-labelledby="speedTitle">
+    <h2 id="speedTitle">재생 속도</h2>
+    <p class="sub">남성 평균에서 여성 평균까지 한 번 바뀌는 데 걸리는 시간입니다. 재생하면서 바꾸면 바로 적용됩니다.</p>
+
+    <div class="field">
+      <div class="field-head"><b>변하는 시간</b><span class="hint-r">0.5초 ~ 2분</span></div>
+      <div class="stepper">
+        <button id="durDown" aria-label="시간 줄이기">−</button>
+        <label class="num"><input id="durInput" type="number" inputmode="decimal" min="0.5" max="120" step="0.1" value="6" aria-label="변하는 시간(초)"><span>초</span></label>
+        <button id="durUp" aria-label="시간 늘리기">+</button>
+      </div>
+      <input type="range" class="neutral" id="durRange" min="0" max="1000" value="500" aria-label="변하는 시간">
+      <div class="presets" id="durPresets">
+        <button data-s="2">2초</button><button data-s="5">5초</button><button data-s="10">10초</button><button data-s="30">30초</button><button data-s="60">1분</button>
+      </div>
+    </div>
+
+    <div class="field">
+      <div class="field-head"><b>속도 변화</b></div>
+      <div class="seg" role="radiogroup" aria-label="속도 변화" id="easeSeg">
+        <button role="radio" data-v="smooth">부드럽게<small>처음·끝은 천천히</small></button>
+        <button role="radio" data-v="linear">일정하게<small>내내 같은 빠르기</small></button>
+      </div>
+    </div>
+
+    <div class="field">
+      <div class="field-head"><b>반복</b></div>
+      <div class="seg" role="radiogroup" aria-label="반복" id="loopSeg">
+        <button role="radio" data-v="loop">왕복 반복<small>남 → 여 → 남 …</small></button>
+        <button role="radio" data-v="once">한 번만<small>끝에 닿으면 멈춤</small></button>
+      </div>
+    </div>
+
+    <div class="field" id="holdField">
+      <div class="field-head"><b>양 끝에서 멈추는 시간</b><output id="holdOut">1초</output></div>
+      <input type="range" class="neutral" id="holdRange" min="0" max="10" step="1" value="2" aria-label="양 끝에서 멈추는 시간">
+    </div>
+
+    <p class="summary" id="speedSummary"></p>
+    <div class="sheet-actions">
+      <button class="ghost" id="speedReset">기본값</button>
+      <button class="primary" id="speedClose">확인</button>
+    </div>
   </div>
 </div>
 
