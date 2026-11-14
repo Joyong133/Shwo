@@ -50,27 +50,39 @@
     extras[t.key] = { n: t.n, idx: new Uint16Array(dec(t.idx).buffer), d: out };
   });
   // hair: its own mesh; base is the male head with the short style, deltas are skeleton, style and both
-  var HD = D.hair, HNV = HD.nv, hbase = new Float32Array(HNV * STRIDE), hcur = new Float32Array(HNV * STRIDE);
-  var hindices = new Uint16Array(dec(HD.idx).buffer);
-  (function () {
-    var p = new Uint16Array(dec(HD.pos).buffer), n = new Int8Array(dec(HD.nrm).buffer), a = dec(HD.ao);
-    for (var i = 0; i < HNV; i++) {
+  // hair: one mesh per long style (perm, twin tails); base is the male head with the short cut,
+  // deltas are skeleton, style and both
+  function loadHair(HD) {
+    var n = HD.nv, hb = new Float32Array(n * STRIDE);
+    var p = new Uint16Array(dec(HD.pos).buffer), nr = new Int8Array(dec(HD.nrm).buffer), a = dec(HD.ao);
+    for (var i = 0; i < n; i++) {
       for (var c = 0; c < 3; c++) {
-        hbase[i * STRIDE + c] = HD.bbMin[c] + p[i * 3 + c] / 65535 * (HD.bbMax[c] - HD.bbMin[c]);
-        hbase[i * STRIDE + 3 + c] = n[i * 3 + c] / 127;
+        hb[i * STRIDE + c] = HD.bbMin[c] + p[i * 3 + c] / 65535 * (HD.bbMax[c] - HD.bbMin[c]);
+        hb[i * STRIDE + 3 + c] = nr[i * 3 + c] / 127;
       }
-      hbase[i * STRIDE + 6] = a[i] / 255;
+      hb[i * STRIDE + 6] = a[i] / 255;
     }
-  })();
-  var hdeltas = HD.targets.map(function (t) {
-    var p = new Int16Array(dec(t.pos).buffer), n = new Int8Array(dec(t.nrm).buffer), a = new Int8Array(dec(t.ao).buffer);
-    var out = new Float32Array(HNV * STRIDE), ps = t.posScale / 32767, ns = t.nrmScale / 127;
-    for (var i = 0; i < HNV; i++) {
-      for (var c = 0; c < 3; c++) { out[i * STRIDE + c] = p[i * 3 + c] * ps; out[i * STRIDE + 3 + c] = n[i * 3 + c] * ns; }
-      out[i * STRIDE + 6] = a[i] / 127;
-    }
-    return out;
-  });
+    var deltas = HD.targets.map(function (t) {
+      var q = new Int16Array(dec(t.pos).buffer), qn = new Int8Array(dec(t.nrm).buffer), qa = new Int8Array(dec(t.ao).buffer);
+      var out = new Float32Array(n * STRIDE), ps = t.posScale / 32767, ns = t.nrmScale / 127;
+      for (var i = 0; i < n; i++) {
+        for (var c = 0; c < 3; c++) { out[i * STRIDE + c] = q[i * 3 + c] * ps; out[i * STRIDE + 3 + c] = qn[i * 3 + c] * ns; }
+        out[i * STRIDE + 6] = qa[i] / 127;
+      }
+      return out;
+    });
+    return { nv: n, base: hb, cur: new Float32Array(n * STRIDE), idx: new Uint16Array(dec(HD.idx).buffer), deltas: deltas, vbo: null, ibo: null };
+  }
+  var hairSets = { perm: loadHair(D.hair), twin: loadHair(D.hairTwin) };
+
+  // where every body vertex sits on the average female figure: underwear is cut to shape there, so it
+  // stays on the same part of the body whatever shape the figure takes
+  var femPos = new Float32Array(NV * 3);
+  for (var fi = 0; fi < NV; fi++) for (var fc = 0; fc < 3; fc++) {
+    var fo = fi * STRIDE + fc;
+    femPos[fi * 3 + fc] = base[fo] + deltas[0][fo] + deltas[1][fo] + deltas[2][fo] + deltas[3][fo];
+  }
+
   var basePos = new Float32Array(NV * 3);
   for (var i = 0; i < NV; i++) { basePos[i * 3] = base[i * STRIDE]; basePos[i * 3 + 1] = base[i * STRIDE + 1]; basePos[i * 3 + 2] = base[i * STRIDE + 2]; }
 
@@ -118,6 +130,18 @@
   var ext = { B: 0, W: 0, H: 0 };                  // individual variation past the female average: bust, waist, hips
   var view = { yaw: -0.42, pitch: 0.10, zoom: 1, panY: 0 };
   var HOME = { yaw: -0.42, pitch: 0.10, zoom: 1, panY: 0 };
+  // what the female side wears: hair 'twin' (twin tails) or 'perm'; outfit 'underwear' (bra and briefs) or 'skirt'
+  var LOOK_DEFAULT = { hair: 'twin', outfit: 'underwear' };
+  var look = (function () {
+    var o = { hair: LOOK_DEFAULT.hair, outfit: LOOK_DEFAULT.outfit };
+    try {
+      var saved = JSON.parse(localStorage.getItem('look') || 'null');
+      if (saved && (saved.hair === 'twin' || saved.hair === 'perm')) o.hair = saved.hair;
+      if (saved && (saved.outfit === 'underwear' || saved.outfit === 'skirt')) o.outfit = saved.outfit;
+    } catch (e) { /* storage unavailable: defaults */ }
+    return o;
+  })();
+  function saveLook() { try { localStorage.setItem('look', JSON.stringify(look)); } catch (e) { /* ignore */ } }
   var ui = { guides: true, hair: true, clothes: true, spin: false, playing: false, dir: 1, hold: 0, p: 0, topic: null };
   var dirtyShape = true, dirtyView = true, raf = 0, lastT = 0, insetTop = 0;
 
@@ -169,25 +193,30 @@
   }
 
   // ───────────── WebGL ─────────────
-  var gl = null, prog = null, floorProg = null, vbo = null, ibo = null, bbo = null, fbo = null, hvbo = null, hibo = null, gbo = null, sibo = null, pibo = null, kvbo = null, kibo = null;
+  var gl = null, prog = null, floorProg = null, vbo = null, ibo = null, bbo = null, fbo = null, gbo = null, sibo = null, pibo = null, kvbo = null, kibo = null, febo = null;
   var VS = [
-    'attribute vec3 aPos; attribute vec3 aNrm; attribute float aAo; attribute vec3 aBase; attribute vec4 aGar;',
+    'attribute vec3 aPos; attribute vec3 aNrm; attribute float aAo; attribute vec3 aBase; attribute vec4 aGar; attribute vec3 aFem;',
     'uniform mat4 uVP; uniform float uOffset; uniform vec3 uArmA, uArmB, uLegA, uLegB;',
-    'varying vec3 vP; varying vec3 vN; varying float vAo; varying vec3 vB; varying vec4 vG;',
+    'varying vec3 vP; varying vec3 vN; varying float vAo; varying vec3 vB; varying vec4 vG; varying vec3 vF;',
     'void main(){',
-    '  vec3 p=aPos+aNrm*uOffset; vP=p; vN=aNrm; vAo=aAo; vB=vec3(abs(aBase.x),aBase.yz);',
+    '  vec3 p=aPos+aNrm*uOffset; vP=p; vN=aNrm; vAo=aAo; vB=vec3(abs(aBase.x),aBase.yz); vF=vec3(abs(aFem.x),aFem.yz);',
     // garment coordinates: position along the arm and the leg (exact, from the rest pose) and the baked shares
     '  vec3 ab=uArmB-uArmA, lb=uLegB-uLegA;',
     '  vG=vec4(dot(vB-uArmA,ab)/dot(ab,ab), aGar.y, dot(vB-uLegA,lb)/dot(lb,lb), aGar.w);',
     '  gl_Position=uVP*vec4(p,1.0);',
     '}'
   ].join('\n');
-  // uMode: 0 body, 1 hair, 2 top, 3 trousers, 4 skirt. Garments are the body surface pushed out a little
-  // and cut to shape, so they follow every body shape without any data of their own.
+  // uMode: 0 body, 1 hair, 2 top, 3 trousers, 4 skirt, 5 bra, 6 briefs. Garments are the body surface pushed
+  // out a little and cut to shape, so they follow every body shape without any data of their own.
+  // Top and trousers are cut in rest-pose coordinates (vB), the underwear on the average female figure (vF).
   var FS = [
     'precision highp float;',
-    'varying vec3 vP; varying vec3 vN; varying float vAo; varying vec3 vB; varying vec4 vG;',
+    'varying vec3 vP; varying vec3 vN; varying float vAo; varying vec3 vB; varying vec4 vG; varying vec3 vF;',
     'uniform vec3 uEye, uKey, uFill, uBack, uRim, uTint, uAlbedo; uniform float uGloss, uMode;',
+    'uniform vec3 uBC, uBR;',      // breast centre and radii on the female figure
+    'uniform vec4 uBra;',          // band bottom, band top, strap x, strap half-width
+    'uniform vec4 uBrief;',        // top at the front, top at the back, lowest edge (crotch), leg opening at the side
+    'uniform float uSeamZ;',       // depth of the side seam: the front of the briefs is in front of it
     'uniform vec3 uHiC[3]; uniform vec3 uHiR[3]; uniform float uHi;',
     'uniform vec4 uNeck;',        // neckline: height, radius, slope, forward tilt
     'uniform vec4 uCut;',         // top hem height, sleeve end, waistband height, trouser-leg end
@@ -208,6 +237,35 @@
     '    if(armW>0.5) discard;',
     '    if(legW>0.5){ if(legT>uCut.w) discard; band=step(uCut.w-0.014,legT); }',
     '    else{ if(vB.y>uCut.z) discard; band=step(uCut.z-0.024,vB.y); }',
+    '  }else if(uMode>5.5){',
+    // briefs: low-rise waistband; the leg openings rise from the crotch to the side, higher at the front
+    '    if(armW>0.5) discard;',
+    '    float fr=smoothstep(uSeamZ-0.025,uSeamZ+0.025,vF.z);',
+    '    float top=mix(uBrief.y,uBrief.x,fr);',
+    '    float t=clamp((vF.x-0.018)/mix(0.135,0.118,fr),0.0,1.0);',
+    '    float edge=uBrief.z+(uBrief.w-uBrief.z)*pow(t,mix(1.35,0.80,fr));',
+    '    if(vF.y>top||vF.y<edge) discard;',
+    '    band=max(step(top-0.007,vF.y),step(vF.y,edge+0.005));',
+    '  }else if(uMode>4.5){',
+    // bra: two cups round the breasts with a plunging top edge, centre gore, under-bust band, straps over the shoulders
+    '    if(armW>0.5) discard;',
+    '    vec2 cu=vec2((vF.x-uBC.x)/uBR.x,(vF.y-uBC.y)/uBR.y);',
+    '    float rr=dot(cu,cu), front=step(uBC.z-0.035,vF.z);',
+    '    float topLine=0.30+0.62*cu.x;',
+    '    float cup=front*step(rr,1.10)*step(cu.y,topLine);',
+    '    float side=smoothstep(uBC.x+0.25*uBR.x,uBC.x+0.95*uBR.x,vF.x)*(1.0-smoothstep(-0.015,-0.055,vF.z));',
+    // in front the band comes up to the underwire, the lower arc of each cup
+    '    float arc=uBC.y-uBR.y*sqrt(max(1.10-cu.x*cu.x,0.0));',
+    '    float bandTop=max(uBra.y+0.032*side,front*step(cu.x*cu.x,1.10)*arc);',
+    '    float bandM=step(uBra.x,vF.y)*step(vF.y,bandTop);',
+    '    float gore=front*step(vF.x,0.022)*step(uBra.x,vF.y)*step(vF.y,uBC.y-0.25*uBR.y);',
+    '    float sx=uBra.z-0.012*smoothstep(0.03,-0.06,vF.z);',
+    '    float low=mix(bandTop-0.004,uBC.y+0.55*uBR.y,smoothstep(-0.005,0.03,vF.z));',
+    '    float strap=step(abs(vF.x-sx),uBra.w)*step(low,vF.y);',
+    '    if(cup+bandM+gore+strap<0.5) discard;',
+    '    float cupEdge=cup*max(step(1.0,rr),step(topLine-0.10,cu.y));',
+    '    float bandEdge=bandM*(1.0-cup)*max(step(vF.y,uBra.x+0.004),step(bandTop-0.004,vF.y));',
+    '    band=max(max(cupEdge,bandEdge),strap*(1.0-cup)*0.6);',
     '  }else if(uMode>3.5){',
     '    if(!gl_FrontFacing) n=-n;',
     '    band=step(0.5,vB.x);',
@@ -273,8 +331,12 @@
     vbo = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, vbo); gl.bufferData(gl.ARRAY_BUFFER, cur.byteLength, gl.DYNAMIC_DRAW);
     bbo = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, bbo); gl.bufferData(gl.ARRAY_BUFFER, basePos, gl.STATIC_DRAW);
     ibo = gl.createBuffer(); gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ibo); gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, indices, gl.STATIC_DRAW);
-    hvbo = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, hvbo); gl.bufferData(gl.ARRAY_BUFFER, hcur.byteLength, gl.DYNAMIC_DRAW);
-    hibo = gl.createBuffer(); gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, hibo); gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, hindices, gl.STATIC_DRAW);
+    ['perm', 'twin'].forEach(function (k) {
+      var h = hairSets[k];
+      h.vbo = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, h.vbo); gl.bufferData(gl.ARRAY_BUFFER, h.cur.byteLength, gl.DYNAMIC_DRAW);
+      h.ibo = gl.createBuffer(); gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, h.ibo); gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, h.idx, gl.STATIC_DRAW);
+    });
+    febo = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, febo); gl.bufferData(gl.ARRAY_BUFFER, femPos, gl.STATIC_DRAW);
     gbo = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, gbo); gl.bufferData(gl.ARRAY_BUFFER, garU8, gl.STATIC_DRAW);
     sibo = gl.createBuffer(); gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, sibo); gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, shirtIdx, gl.STATIC_DRAW);
     pibo = gl.createBuffer(); gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, pibo); gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, pantsIdx, gl.STATIC_DRAW);
@@ -383,6 +445,7 @@
   // ───────────── drawing ─────────────
   var A_COL = [95, 208, 197], B_COL = [242, 166, 94];
   var TOP_A = [0.13, 0.36, 0.37], TOP_B = [0.72, 0.42, 0.20], BOTTOM_COL = [0.085, 0.10, 0.15];   // garment colours (linear)
+  var UNDER_COL = [0.60, 0.27, 0.33];              // bra and briefs, a matching set
   function blend() {
     var wS = w.S, wF = w.F, wM = w.M, wR = wS * wF * wM;
     var dS = deltas[0], dF = deltas[1], dM = deltas[2], dR = deltas[3];
@@ -401,17 +464,17 @@
     gl.bindBuffer(gl.ARRAY_BUFFER, vbo); gl.bufferSubData(gl.ARRAY_BUFFER, 0, cur);
   }
 
-  function blendHair() {
-    var wS = w.S, wK = w.K, wR = wS * wK, dS = hdeltas[0], dK = hdeltas[1], dR = hdeltas[2];
-    for (var i = 0, n = HNV * STRIDE; i < n; i++) hcur[i] = hbase[i] + wS * dS[i] + wK * dK[i] + wR * dR[i];
-    gl.bindBuffer(gl.ARRAY_BUFFER, hvbo); gl.bufferSubData(gl.ARRAY_BUFFER, 0, hcur);
+  function blendHair() {                           // only the style being shown
+    var h = hairSets[look.hair], wS = w.S, wK = w.K, wR = wS * wK, dS = h.deltas[0], dK = h.deltas[1], dR = h.deltas[2], hb = h.base, hc = h.cur;
+    for (var i = 0, n = h.nv * STRIDE; i < n; i++) hc[i] = hb[i] + wS * dS[i] + wK * dK[i] + wR * dR[i];
+    gl.bindBuffer(gl.ARRAY_BUFFER, h.vbo); gl.bufferSubData(gl.ARRAY_BUFFER, 0, hc);
   }
 
   // The skirt hangs from the body as it is right now: fitted from the waist to the fullest part of the
   // hips, then straight down with a slight flare and soft folds. Its length grows with the styling weight.
   function buildSkirt() {
     var c = w.K;
-    skirtOn = ui.clothes && c > 0.03;
+    skirtOn = ui.clothes && look.outfit === 'skirt' && c > 0.03;
     if (!skirtOn) return;
     var yW = mixMetric('waistY'), yH = mixMetric('hipY'), yK = lerp(LM.knee[1], LF.knee[1], w.S);
     var top = yW + 0.016, bot = yW - Math.max(0.02, (yW - yK - 0.025) * c), dy = (top - bot) / (SK_RING - 1);
@@ -484,7 +547,7 @@
     gl.disable(gl.BLEND); gl.enable(gl.DEPTH_TEST); gl.enable(gl.CULL_FACE); gl.cullFace(gl.BACK);
     gl.useProgram(prog.p);
     var loc = function (n) { return gl.getAttribLocation(prog.p, n); };
-    var aP = loc('aPos'), aN = loc('aNrm'), aA = loc('aAo'), aB = loc('aBase'), aG = loc('aGar');
+    var aP = loc('aPos'), aN = loc('aNrm'), aA = loc('aAo'), aB = loc('aBase'), aG = loc('aGar'), aF = loc('aFem');
     var bindMesh = function (buf) {                          // an interleaved position / normal / occlusion buffer
       gl.bindBuffer(gl.ARRAY_BUFFER, buf);
       gl.enableVertexAttribArray(aP); gl.vertexAttribPointer(aP, 3, gl.FLOAT, false, STRIDE * 4, 0);
@@ -495,6 +558,7 @@
     bindMesh(vbo);
     gl.bindBuffer(gl.ARRAY_BUFFER, bbo); gl.vertexAttribPointer(aB, 3, gl.FLOAT, false, 0, 0);
     gl.bindBuffer(gl.ARRAY_BUFFER, gbo); gl.enableVertexAttribArray(aG); gl.vertexAttribPointer(aG, 4, gl.UNSIGNED_BYTE, true, 0, 0);
+    gl.bindBuffer(gl.ARRAY_BUFFER, febo); gl.enableVertexAttribArray(aF); gl.vertexAttribPointer(aF, 3, gl.FLOAT, false, 0, 0);
 
     // lights ride with the camera so the figure reads the same from every side
     var cy = Math.cos(view.yaw), sy = Math.sin(view.yaw);
@@ -508,10 +572,26 @@
     gl.uniform3f(u.uRim, lerp(A_COL[0], B_COL[0], m) / 255 * 0.9, lerp(A_COL[1], B_COL[1], m) / 255 * 0.9, lerp(A_COL[2], B_COL[2], m) / 255 * 0.9);
     gl.uniform3f(u.uTint, 1.0, 0.62, 0.20);
     gl.uniform3fv(u.uHiC, hiC); gl.uniform3fv(u.uHiR, hiR); gl.uniform1f(u.uHi, hiAmt);
-    // clothes change with the styling weight: T-shirt and long trousers → scoop-neck top and a skirt over short shorts
-    gl.uniform4f(u.uNeck, LM.shoulder[1] + 0.030, lerp(0.080, 0.100, c), 1.3, lerp(0.25, 0.50, c));
-    // (the top's hem rises to just under the waist as the skirt grows, so it sits tucked in)
-    gl.uniform4f(u.uCut, lerp(LM.pelvis[1] - 0.035, LM.waist[1] - 0.035, Math.min(1, c * 2.5)), lerp(0.34, 0.22, c), LM.pelvis[1] + 0.075, lerp(0.94, 0.13, c));
+    var under = look.outfit === 'underwear';
+    var ss = function (e0, e1, x) { var t = Math.max(0, Math.min(1, (x - e0) / (e1 - e0))); return t * t * (3 - 2 * t); };
+    if (under) {
+      // T-shirt and long trousers give way to the underwear: sleeves and trouser legs retract, the shirt's hem
+      // rises and its neckline drops until it is gone, the trousers' waistband slides down past the hips
+      gl.uniform4f(u.uNeck, LM.shoulder[1] + 0.030 - 0.52 * ss(0.38, 1.0, c), 0.080, 1.3, 0.25);
+      gl.uniform4f(u.uCut, lerp(LM.pelvis[1] - 0.035, LM.chest[1] - 0.075, ss(0.0, 0.55, c)), lerp(0.34, -0.30, ss(0.0, 0.45, c)),
+        lerp(LM.pelvis[1] + 0.075, LM.crotch[1] - 0.14, ss(0.40, 1.0, c)), lerp(0.94, -0.35, ss(0.0, 0.60, c)));
+    } else {
+      // T-shirt and long trousers → scoop-neck top and a skirt over short shorts
+      // (the top's hem rises to just under the waist as the skirt grows, so it sits tucked in)
+      gl.uniform4f(u.uNeck, LM.shoulder[1] + 0.030, lerp(0.080, 0.100, c), 1.3, lerp(0.25, 0.50, c));
+      gl.uniform4f(u.uCut, lerp(LM.pelvis[1] - 0.035, LM.waist[1] - 0.035, Math.min(1, c * 2.5)), lerp(0.34, 0.22, c), LM.pelvis[1] + 0.075, lerp(0.94, 0.13, c));
+    }
+    // underwear, placed on the average female figure
+    var bc = LF.breast, br = LF.breastRad;
+    gl.uniform3f(u.uBC, bc[0], bc[1], bc[2]); gl.uniform3f(u.uBR, br[0], br[1], br[2]);
+    gl.uniform4f(u.uBra, bc[1] - br[1] - 0.030, bc[1] - 0.92 * br[1], bc[0] + 0.56 * br[0], 0.0065);
+    gl.uniform4f(u.uBrief, LF.pelvis[1] + 0.022, LF.pelvis[1] + 0.034, LF.crotch[1] - 0.035, LF.pelvis[1] - 0.040);
+    gl.uniform1f(u.uSeamZ, -0.006);
     gl.uniform3fv(u.uArmA, LM.armTop); gl.uniform3fv(u.uArmB, LM.wrist); gl.uniform3fv(u.uLegA, LM.hipJ); gl.uniform3fv(u.uLegB, LM.ankle);
     gl.uniform2f(u.uSkirt, skirtHem, ui.clothes && !ui.topic && skirtOn ? Math.min(1, c * 2) : 0);
 
@@ -521,9 +601,19 @@
     gl.drawElements(gl.TRIANGLES, indices.length, gl.UNSIGNED_SHORT, 0);
 
     var dressed = ui.clothes && !ui.topic;                   // a highlighted topic is shown on the bare figure
+    if (dressed && under) {                                  // underwear first: top and trousers sit over it
+      gl.uniform1f(u.uGloss, 0.05);
+      gl.uniform3f(u.uAlbedo, UNDER_COL[0], UNDER_COL[1], UNDER_COL[2]);
+      gl.uniform1f(u.uMode, 6); gl.uniform1f(u.uOffset, 0.0028);
+      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, pibo);
+      gl.drawElements(gl.TRIANGLES, pantsIdx.length, gl.UNSIGNED_SHORT, 0);
+      gl.uniform1f(u.uMode, 5); gl.uniform1f(u.uOffset, 0.0034);
+      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, sibo);
+      gl.drawElements(gl.TRIANGLES, shirtIdx.length, gl.UNSIGNED_SHORT, 0);
+    }
     if (dressed) {
       gl.uniform1f(u.uGloss, 0.025);
-      gl.uniform1f(u.uMode, 3); gl.uniform1f(u.uOffset, 0.004);
+      gl.uniform1f(u.uMode, 3); gl.uniform1f(u.uOffset, under ? 0.0052 : 0.004);
       gl.uniform3f(u.uAlbedo, BOTTOM_COL[0], BOTTOM_COL[1], BOTTOM_COL[2]);
       gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, pibo);
       gl.drawElements(gl.TRIANGLES, pantsIdx.length, gl.UNSIGNED_SHORT, 0);
@@ -536,6 +626,7 @@
 
     // the skirt and the hair are meshes of their own: no garment coordinates, no highlight
     gl.disableVertexAttribArray(aG); gl.vertexAttrib4f(aG, 0, 0, 0, 0);
+    gl.disableVertexAttribArray(aF); gl.vertexAttrib3f(aF, 0, 0, 0);
     gl.uniform1f(u.uOffset, 0); gl.uniform1f(u.uHi, 0);
     if (dressed && skirtOn) {
       bindMesh(kvbo); gl.vertexAttribPointer(aB, 3, gl.FLOAT, false, STRIDE * 4, 0);
@@ -547,13 +638,14 @@
       gl.enable(gl.CULL_FACE);
     }
     if (ui.hair) {
-      bindMesh(hvbo); gl.vertexAttribPointer(aB, 3, gl.FLOAT, false, STRIDE * 4, 0);
-      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, hibo);
+      var hs = hairSets[look.hair];
+      bindMesh(hs.vbo); gl.vertexAttribPointer(aB, 3, gl.FLOAT, false, STRIDE * 4, 0);
+      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, hs.ibo);
       gl.uniform1f(u.uMode, 1);
       gl.uniform3f(u.uAlbedo, 0.265, 0.205, 0.165); gl.uniform1f(u.uGloss, 0.16);
-      gl.drawElements(gl.TRIANGLES, hindices.length, gl.UNSIGNED_SHORT, 0);
+      gl.drawElements(gl.TRIANGLES, hs.idx.length, gl.UNSIGNED_SHORT, 0);
     }
-    for (var a = 0; a < 5; a++) gl.disableVertexAttribArray(a);
+    for (var a = 0; a < 6; a++) gl.disableVertexAttribArray(a);
   }
 
   var ctx = ovCanvas.getContext('2d');
@@ -753,6 +845,16 @@
     return close;
   }
 
+  function syncLook() {
+    Array.prototype.forEach.call($('hairSeg').children, function (b) { b.setAttribute('aria-checked', String(b.dataset.v === look.hair)); });
+    Array.prototype.forEach.call($('outfitSeg').children, function (b) { b.setAttribute('aria-checked', String(b.dataset.v === look.outfit)); });
+    $('lookTo').textContent = (look.hair === 'twin' ? '트윈테일' : '긴 파마') + '·' + (look.outfit === 'underwear' ? '속옷 세트' : '상의·치마');
+  }
+  function setLook(changes) {
+    for (var k in changes) look[k] = changes[k];
+    saveLook(); syncLook(); dirtyShape = true; kick();
+  }
+
   function bind() {
     $('master').addEventListener('input', function (e) { setPlaying(false); setAll(e.target.value / 1000); });
     [['S', 'fS'], ['F', 'fF'], ['M', 'fM'], ['K', 'fK']].forEach(function (k) {
@@ -769,13 +871,16 @@
     $('xReset').addEventListener('click', function () { ext.B = ext.W = ext.H = 0; dirtyShape = true; kick(); });
     $('btnPlay').addEventListener('click', function () { setPlaying(!ui.playing); });
     bindSpeed();
+    Array.prototype.forEach.call($('hairSeg').children, function (b) { b.addEventListener('click', function () { setLook({ hair: b.dataset.v }); }); });
+    Array.prototype.forEach.call($('outfitSeg').children, function (b) { b.addEventListener('click', function () { setLook({ outfit: b.dataset.v }); }); });
+    syncLook();
     $('btnGuides').addEventListener('click', function (e) { ui.guides = !ui.guides; e.currentTarget.setAttribute('aria-pressed', String(ui.guides)); dirtyView = true; kick(); });
     $('btnHair').addEventListener('click', function (e) { ui.hair = !ui.hair; e.currentTarget.setAttribute('aria-pressed', String(ui.hair)); dirtyView = true; kick(); });
     $('btnClothes').addEventListener('click', function (e) { ui.clothes = !ui.clothes; e.currentTarget.setAttribute('aria-pressed', String(ui.clothes)); dirtyShape = true; kick(); });
     $('btnSpin').addEventListener('click', function (e) { ui.spin = !ui.spin; e.currentTarget.setAttribute('aria-pressed', String(ui.spin)); kick(); });
     $('btnFront').addEventListener('click', function () { ui.spin = false; $('btnSpin').setAttribute('aria-pressed', 'false'); view.yaw = 0; view.pitch = 0.04; view.zoom = 1; view.panY = 0; dirtyView = true; kick(); });
 
-    var tabs = ['metrics', 'factors', 'vary', 'learn'];
+    var tabs = ['metrics', 'factors', 'vary', 'style', 'learn'];
     tabs.forEach(function (t) {
       $('tab-' + t).addEventListener('click', function () {
         tabs.forEach(function (o) { $('tab-' + o).setAttribute('aria-selected', String(o === t)); $('pane-' + o).hidden = o !== t; });
@@ -903,6 +1008,7 @@
     },
     topic: setTopic,
     play: function (o) { setPlay(o); },
-    get: function () { return { w: { S: w.S, F: w.F, M: w.M, K: w.K }, hair: ui.hair, clothes: ui.clothes, skirt: skirtOn, ext: { B: ext.B, W: ext.W, H: ext.H }, view: { yaw: view.yaw, pitch: view.pitch, zoom: view.zoom }, playing: ui.playing, p: ui.p, dir: ui.dir, settings: { dur: play.dur, ease: play.ease, loop: play.loop, hold: play.hold }, guides: ui.guides, spin: ui.spin, topic: ui.topic }; }
+    look: function (o) { setLook(o); },
+    get: function () { return { w: { S: w.S, F: w.F, M: w.M, K: w.K }, hair: ui.hair, clothes: ui.clothes, skirt: skirtOn, ext: { B: ext.B, W: ext.W, H: ext.H }, view: { yaw: view.yaw, pitch: view.pitch, zoom: view.zoom }, playing: ui.playing, p: ui.p, dir: ui.dir, settings: { dur: play.dur, ease: play.ease, loop: play.loop, hold: play.hold }, look: { hair: look.hair, outfit: look.outfit }, guides: ui.guides, spin: ui.spin, topic: ui.topic }; }
   };
 })();

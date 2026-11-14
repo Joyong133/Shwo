@@ -11,8 +11,9 @@
 // Three further sparse deltas reach past the female average (bust up to an H cup, a narrower waist,
 // fuller hips) for the app's "individual variation" sliders.
 //
-// Hair is a second mesh, meshed on the long wavy style and carried back to the short one, so the
-// waves keep their resolution. It follows two weights: the skeleton (where the head is) and the style.
+// Hair is a second mesh, meshed on the long style and carried back to the short one, so the waves
+// keep their resolution. It follows two weights: the skeleton (where the head is) and the style.
+// There are two long styles, each with its own mesh: permed (perm) and twin tails (twin).
 //
 //   node tools/bake.mjs            (GRID=0.008 for a quick low-res bake)
 
@@ -280,7 +281,8 @@ function build(P) {
   const bR = P.noBreast ? 0.012 : P.breastR + bu * (BUST.R - 0.054);
   const bOff = P.noBreast ? -0.090 : P.breastOff + bu * (-0.0095 - BUST.embed * BUST.R + 0.039);
   const bC = [ribW * (0.53 + 0.02 * bu), yChest - 0.028 - BUST.drop * bu, ribFront + bOff];
-  L.push(ell('breast', bC, [bR * (1 - 0.10 * bu), bR * (1 - 0.08 * bu), bR * (0.90 + (BUST.depth - 0.90) * bu)], 0.045));
+  const bRad = [bR * (1 - 0.10 * bu), bR * (1 - 0.08 * bu), bR * (0.90 + (BUST.depth - 0.90) * bu)];
+  L.push(ell('breast', bC, bRad, 0.045));
   // the slope from the upper chest down to the breast; it stays inside the chest until the bust is large
   L.push(cap('breastSlope', [ribW * 0.47, yChest + 0.070, ribFront - 0.052], V.add(bC, [0, bR * 0.10, bR * 0.12 * bu]), 0.020 + 0.010 * bu, bR * (0.50 + 0.24 * bu), 0.045));
   L.push(ell('glute', [0.075, yHip - 0.035, P.gluteZ], [P.gluteR, P.gluteR * 1.12, P.gluteR * 0.97], 0.03, { mir: 0.022 }));
@@ -348,6 +350,7 @@ function build(P) {
     thigh: V.lerp(hipJ, knee, 0.4), knee, calf: V.lerp(knee, ankle, 0.33), ankle, hipJ,
     armTop: S, elbow: E, wrist: W, upperArm: V.lerp(S, E, 0.5), foreArm: V.lerp(E, W, 0.4),
     hand: V.add(W, V.mul(dF, hl * 0.5)), foot: [P.ankleX, 0.03, z0 + fl * 0.5],
+    breast: bC, breastRad: bRad, crotch: [0, yCrotch, 0], neck: [0, ySh, 0],
   };
   return { prims: L, lm, y: { yAnkle, yKnee, yCrotch, yHip, yWaist, yChest, ySh, yChin }, P };
 }
@@ -731,27 +734,52 @@ const gar = new Uint8Array(NV * 4);
 }
 
 // ───────────────────────────── hair ─────────────────────────────
-// style 0: an ordinary short cut.  style 1: longer than shoulder length, permed.
-// The same four parts make both; in the short style the hanging parts shrink away inside the cap.
-function buildHair(P, st) {
-  const H = P.H, hs = P.headH / 0.232, W = P.headW, Dp = P.headD, ySh = P.fSh * H;
+// style 0: an ordinary short cut (the same for both kinds).
+// style 1, kind 'perm': longer than shoulder length, permed.
+// style 1, kind 'twin': bangs, short face-framing locks, the rest drawn up into two long tails.
+// Every style has the same parts; in the short style the hanging parts shrink away inside the cap.
+function buildHair(P, st, kind = 'perm') {
+  const H = P.H, hs = P.headH / 0.232, W = P.headW, Dp = P.headD, ySh = P.fSh * H, twin = kind === 'twin';
   const mix = (a, b) => a + (b - a) * st, mix3 = (a, b) => [mix(a[0], b[0]), mix(a[1], b[1]), mix(a[2], b[2])];
   const L = [];
-  L.push(ell('cap', [0, H - 0.097 * hs, -0.004 - mix(0.001, 0.007)],
-    [W + mix(0.009, 0.023), 0.098 * hs + mix(0.015, 0.024), Dp + mix(0.011, 0.025)], 0.02));
-  L.push(ell('fringe', [0, H - 0.040 * hs, Dp * mix(0.72, 0.45)], [W * mix(0.78, 0.70), mix(0.024, 0.018), mix(0.032, 0.024)], 0.012));
-  const rx = [mix(0.050, 0.080), mix(0.050, 0.098), mix(0.046, 0.118), mix(0.040, 0.104)];
-  const rz = [mix(0.030, 0.050), mix(0.030, 0.046), mix(0.028, 0.036), mix(0.024, 0.030)];
-  L.push(loft('back', [0, H - 0.110 * hs, -0.045], mix3([0, H - 0.150 * hs, -0.052], [0, ySh - 0.100, -0.086]),
-    [0, 0.35, 0.70, 1].map((v, i) => [v, rx[i], rz[i], 0, 0]), 0.025, { cap1: mix(0.020, 0.030) }));
-  L.push(cap('lock', mix3([W * 0.6, H - 0.100 * hs, 0], [W + 0.004, H - 0.105 * hs, 0.012]),
-    mix3([W * 0.6, H - 0.130 * hs, 0], [0.092, ySh - 0.075, 0.050]), mix(0.020, 0.034), mix(0.020, 0.030), 0.02));
+  L.push(ell('cap', [0, H - 0.097 * hs, -0.004 - mix(0.001, twin ? 0.004 : 0.007)],
+    [W + mix(0.009, twin ? 0.014 : 0.023), 0.098 * hs + mix(0.015, twin ? 0.018 : 0.024), Dp + mix(0.011, twin ? 0.015 : 0.025)], 0.02));
+  L.push(ell('fringe', [0, H - mix(0.040, twin ? 0.045 : 0.040) * hs, Dp * mix(0.72, twin ? 0.55 : 0.45)],
+    [W * mix(0.78, 0.70), mix(0.024, twin ? 0.020 : 0.018), mix(0.032, twin ? 0.020 : 0.024)], 0.012));
+  // hanging hair at the back: long when permed, short when drawn up into tails
+  const rx = twin ? [0.050, 0.050, 0.046, 0.040] : [mix(0.050, 0.080), mix(0.050, 0.098), mix(0.046, 0.118), mix(0.040, 0.104)];
+  const rz = twin ? [0.030, 0.030, 0.028, 0.024] : [mix(0.030, 0.050), mix(0.030, 0.046), mix(0.028, 0.036), mix(0.024, 0.030)];
+  L.push(loft('back', [0, H - 0.110 * hs, -0.045], twin ? [0, H - 0.150 * hs, -0.052] : mix3([0, H - 0.150 * hs, -0.052], [0, ySh - 0.100, -0.086]),
+    [0, 0.35, 0.70, 1].map((v, i) => [v, rx[i], rz[i], 0, 0]), 0.025, { cap1: twin ? 0.020 : mix(0.020, 0.030) }));
+  // side lock: to the shoulder when permed, a thin face-framing lock to the chin with twin tails
+  L.push(cap('lock', mix3([W * 0.6, H - 0.100 * hs, 0], twin ? [W + 0.001, H - 0.098 * hs, 0.030] : [W + 0.004, H - 0.105 * hs, 0.012]),
+    mix3([W * 0.6, H - 0.130 * hs, 0], twin ? [W - 0.003, H - 0.215 * hs, 0.046] : [0.092, ySh - 0.075, 0.050]),
+    mix(0.020, twin ? 0.011 : 0.034), mix(0.020, twin ? 0.007 : 0.030), 0.02));
+  if (twin) {
+    // a tail on each side (the field is mirrored): tied high at the side of the head, flaring out and
+    // hanging behind the shoulder; in the short style it is a small knot deep inside the cap
+    const tieA = mix3([0.035, H - 0.060 * hs, -0.030], [0.068, H - 0.050 * hs, -0.052]);
+    const tipB = mix3([0.037, H - 0.066 * hs, -0.032], [0.140, ySh - 0.200, -0.125]);
+    const r = (v) => mix(0.003, v);
+    L.push(loft('tail', tieA, tipB, [
+      [0.00, r(0.013), r(0.013), 0, 0], [0.03, r(0.016), r(0.015), mix(0, 0.004), 0],
+      [0.10, r(0.030), r(0.026), mix(0, 0.022), mix(0, -0.004)], [0.25, r(0.040), r(0.032), mix(0, 0.034), mix(0, -0.008)],
+      [0.50, r(0.037), r(0.030), mix(0, 0.028), mix(0, -0.006)], [0.75, r(0.029), r(0.024), mix(0, 0.016), mix(0, -0.002)],
+      [0.92, r(0.018), r(0.016), mix(0, 0.006), 0], [1.00, r(0.008), r(0.008), 0, 0],
+    ], 0.015, { cap0: mix(0.003, 0.012), cap1: mix(0.003, 0.010) }));
+    const tailDir = V.norm(V.sub(tipB, tieA));
+    L.push(ell('tie', V.add(tieA, V.mul(tailDir, mix(0, 0.014))), [mix(0.002, 0.019), mix(0.002, 0.009), mix(0.002, 0.019)], 0.006, { axis: tailDir }));
+  }
   // hairline, as depth below the crown: forehead, above or over the ear, nape
-  // (the forehead line is highest in the middle and comes down toward the temples by `arch`)
-  return { prims: L, st, H, hs, W, cut: { f: mix(0.056, 0.044), arch: mix(0.020, 0.040), e: mix(0.100, 0.175), b: mix(0.185, 0.200) } };
+  // (the forehead line is highest in the middle and comes down toward the temples by `arch`;
+  //  with twin tails it is cut straight across just above the brows: the bangs)
+  const cut = twin ? { f: mix(0.056, 0.092), arch: mix(0.020, 0.012), e: mix(0.100, 0.122), b: mix(0.185, 0.192) }
+    : { f: mix(0.056, 0.044), arch: mix(0.020, 0.040), e: mix(0.100, 0.175), b: mix(0.185, 0.200) };
+  return { prims: L, st, kind, H, hs, W, cut };
 }
 function makeHairSdf(fig) {
-  const [capP, fringe, back, lock] = fig.prims, { f, arch, e, b } = fig.cut, H = fig.H, hs = fig.hs, W = fig.W, st = fig.st;
+  const [capP, fringe, back, lock, tail, tie] = fig.prims, { f, arch, e, b } = fig.cut, H = fig.H, hs = fig.hs, W = fig.W, st = fig.st;
+  const twin = fig.kind === 'twin';
   const ss = (a, c, x) => { const t = Math.max(0, Math.min(1, (x - a) / (c - a))); return t * t * (3 - 2 * t); };
   const TAU = Math.PI * 2;
   return function sdf(x, y, z) {
@@ -765,13 +793,28 @@ function makeHairSdf(fig) {
     d = smin(d, evalPrim(fringe, ax, y, z), 0.012);
     d = smin(d, evalPrim(back, ax, y, z), 0.025);
     d = smin(d, evalPrim(lock, ax, y, z), 0.02);
-    // strands: fine, combed from the crown when short; wavy locks that grow stronger away from the crown when permed
-    const pm = ss(0.05 * hs, 0.15 * hs, below);
     const fine = (Math.sin(34 * th + 5 * Math.sin(18 * y)) * 0.0008 + Math.sin(57 * th - 31 * y + 2 * Math.sin(9 * th)) * 0.0005) * ss(0.010, 0.045, below);
-    const perm = (Math.sin(21 * th + 1.5 * Math.sin(TAU * y / 0.055 + 2 * Math.sin(3 * th))) * 0.0038
-      + Math.sin(TAU * y / 0.043 + 6 * th + 1) * 0.0022) * pm;
-    const part = 0.0035 * Math.exp(-(x * x) / 0.00005) * ss(-0.055, -0.005, z) * (1 - ss(0.075, 0.115, below));   // centre parting
-    return d + fine * (1 - st * pm) + (perm + part) * st;
+    if (!twin) {
+      // strands: fine, combed from the crown when short; wavy locks that grow stronger away from the crown when permed
+      const pm = ss(0.05 * hs, 0.15 * hs, below);
+      const perm = (Math.sin(21 * th + 1.5 * Math.sin(TAU * y / 0.055 + 2 * Math.sin(3 * th))) * 0.0038
+        + Math.sin(TAU * y / 0.043 + 6 * th + 1) * 0.0022) * pm;
+      const part = 0.0035 * Math.exp(-(x * x) / 0.00005) * ss(-0.055, -0.005, z) * (1 - ss(0.075, 0.115, below));   // centre parting
+      return d + fine * (1 - st * pm) + (perm + part) * st;
+    }
+    // twin tails: strands running down each tail with soft curls toward the end, a parting down the back of the head
+    const dt = evalPrim(tail, ax, y, z), onTail = ss(0.006, -0.006, dt - d);
+    d = smin(d, dt, tail.k);
+    d = smin(d, evalPrim(tie, ax, y, z), tie.k);
+    const dx = ax - tail.ox, dy = y - tail.oy, dz = z - tail.oz;
+    const lu = dx * tail.ux + dy * tail.uy + dz * tail.uz, lv = dx * tail.vx + dy * tail.vy + dz * tail.vz, lw = dx * tail.wx + dy * tail.wy + dz * tail.wz;
+    const sc = Math.max(0, Math.min(1, lv / tail.h));
+    section(tail, sc);
+    const ang = Math.atan2(lw - SEC[3], lu - SEC[2]);
+    const strands = (Math.sin(13 * ang + 1.2 * Math.sin(TAU * sc * 2)) * 0.0009 + Math.sin(29 * ang + 1.3) * 0.0004) * ss(0.02, 0.10, sc);
+    const curl = Math.sin(TAU * lv / 0.095 + 0.6 * ang) * 0.0020 * ss(0.55, 0.90, sc);
+    const part = 0.0030 * Math.exp(-(x * x) / 0.00004) * ss(0.0, -0.045, z) * ss(0.02, 0.06, below);           // back parting
+    return d + fine * (1 - onTail) + ((strands + curl) * onTail + part) * st;
   };
 }
 function orient(tris, sh) {
@@ -788,17 +831,21 @@ function orient(tris, sh) {
 
 const HGRID = +process.env.HGRID || 0.0052;
 const PF = resolve(1, 0, 0), PM = resolve(0, 0, 0);       // hair only depends on the skeleton
-// corners: [skeleton, style]
-const hairFig = { fl: buildHair(PF, 1), ml: buildHair(PM, 1), fs: buildHair(PF, 0), ms: buildHair(PM, 0) };
-const hairSdf = Object.fromEntries(Object.entries(hairFig).map(([k, f]) => [k, makeHairSdf(f)]));
-const hxh = Math.ceil(0.22 / HGRID) * HGRID;
-const hairMesh = surfaceNets(hairSdf.fl, [-hxh, PF.fSh * PF.H - 0.17, -0.22], [hxh, PF.H + 0.06, 0.17], HGRID);
-const HNV = hairMesh.pos.length / 3, HNT = hairMesh.tris.length / 3;
-log(`hair grid ${hairMesh.dims.join('×')}  →  ${HNV} vertices, ${HNT} triangles`);
-if (HNV > 65535) throw new Error('too many hair vertices for 16-bit indices; raise HGRID');
-const hair = { fl: shape('hair fl', hairFig.fl, hairSdf.fl, hairMesh.pos, null, 40, true) };
-for (const k of ['ml', 'fs', 'ms']) hair[k] = shape('hair ' + k, hairFig[k], hairSdf[k], hair.fl.pos, hairFig.fl, 40, true);
-orient(hairMesh.tris, hair.fl);
+// corners: [skeleton, style]; the mesh is made on the female long style and carried to the others
+function bakeHair(kind) {
+  const fig = { fl: buildHair(PF, 1, kind), ml: buildHair(PM, 1, kind), fs: buildHair(PF, 0, kind), ms: buildHair(PM, 0, kind) };
+  const sdf = Object.fromEntries(Object.entries(fig).map(([k, f]) => [k, makeHairSdf(f)]));
+  const hxh = Math.ceil(0.22 / HGRID) * HGRID, yMin = PF.fSh * PF.H - (kind === 'twin' ? 0.26 : 0.17);
+  const mesh = surfaceNets(sdf.fl, [-hxh, yMin, -0.22], [hxh, PF.H + 0.06, 0.17], HGRID);
+  const nv = mesh.pos.length / 3, nt = mesh.tris.length / 3;
+  log(`hair ${kind}: grid ${mesh.dims.join('×')}  →  ${nv} vertices, ${nt} triangles`);
+  if (nv > 65535) throw new Error('too many hair vertices for 16-bit indices; raise HGRID');
+  const sh = { fl: shape(`hair ${kind} fl`, fig.fl, sdf.fl, mesh.pos, null, 40, true) };
+  for (const k of ['ml', 'fs', 'ms']) sh[k] = shape(`hair ${kind} ${k}`, fig[k], sdf[k], sh.fl.pos, fig.fl, 40, true);
+  orient(mesh.tris, sh.fl);
+  return { mesh, sh, nv, nt };
+}
+const hairBakes = { perm: bakeHair('perm'), twin: bakeHair('twin') };
 
 // ───────────────────────────── pack ─────────────────────────────
 const b64 = (ta) => Buffer.from(ta.buffer, ta.byteOffset, ta.byteLength).toString('base64');
@@ -853,7 +900,7 @@ const extras = Object.keys(VARIANTS).map((k) => {
 });
 
 // hair: male head with the short style, then deltas for skeleton (S), style (K) and both together (R)
-const hairPack = (() => {
+function packHair({ mesh, sh: hair, nv: HNV, nt: HNT }, kind) {
   const b0 = hair.ms, mn = [1e9, 1e9, 1e9], mx = [-1e9, -1e9, -1e9];
   for (let i = 0; i < HNV * 3; i++) { mn[i % 3] = Math.min(mn[i % 3], b0.pos[i]); mx[i % 3] = Math.max(mx[i % 3], b0.pos[i]); }
   const qp = new Uint16Array(HNV * 3);
@@ -869,9 +916,10 @@ const hairPack = (() => {
     const q = new Int16Array(HNV * 3); for (let i = 0; i < HNV * 3; i++) q[i] = Math.round(dp[i] / m1 * 32767);
     return { key: k, posScale: m1, pos: b64(q), nrmScale: m2, nrm: b64(q8(dn, 127 / m2)), ao: b64(q8(da, 127)) };
   });
-  log('hair max vertex travel (mm): ' + targets.map((t) => `${t.key} ${(t.posScale * 1000).toFixed(1)}`).join('  '));
-  return { nv: HNV, nt: HNT, bbMin: mn, bbMax: mx, pos: b64(qp), nrm: b64(q8(b0.nrm, 127)), ao: b64(qu8(b0.ao)), idx: b64(new Uint16Array(hairMesh.tris)), targets };
-})();
+  log(`hair ${kind} max vertex travel (mm): ` + targets.map((t) => `${t.key} ${(t.posScale * 1000).toFixed(1)}`).join('  '));
+  return { nv: HNV, nt: HNT, bbMin: mn, bbMax: mx, pos: b64(qp), nrm: b64(q8(b0.nrm, 127)), ao: b64(qu8(b0.ao)), idx: b64(new Uint16Array(mesh.tris)), targets };
+}
+const hairPack = packHair(hairBakes.perm, 'perm'), hairTwinPack = packHair(hairBakes.twin, 'twin');
 
 const round = (o) => JSON.parse(JSON.stringify(o, (k, v) => (typeof v === 'number' ? +v.toFixed(5) : v)));
 const data = {
@@ -879,7 +927,7 @@ const data = {
   bbMin, bbMax,
   pos: b64(qPos), nrm: b64(q8(base.nrm, 127)), ao: b64(qu8(base.ao)),
   idx: b64(new Uint16Array(mesh.tris)), gar: b64(gar),
-  targets, extras, hair: hairPack,
+  targets, extras, hair: hairPack, hairTwin: hairTwinPack,
   metrics: round(metrics), cupTable: round(cupTable),
   lm: round({ male: corners.base.lm, female: corners.full.lm }),
   bands, topVert,

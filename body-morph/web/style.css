@@ -182,6 +182,10 @@ input[type=range].neutral::-moz-range-track{background:linear-gradient(90deg,#3b
 .seg button small{display:block;margin-top:1px;font-size:11px;font-weight:500;color:var(--muted);line-height:1.35}
 .seg button[aria-checked="true"]{border-color:var(--hi);box-shadow:inset 0 0 0 1px var(--hi)}
 .field.off{opacity:.4}
+.pick{display:flex;align-items:center;gap:10px;margin-top:8px}
+.pick-label{flex:0 0 auto;width:4.6em;font-size:12.5px;font-weight:650;color:var(--muted)}
+.seg.mini{flex:1;min-width:0}
+.seg.mini button{padding:0 10px;min-height:34px;text-align:center;font-size:13px}
 .field.off input{pointer-events:none}
 .sheet .summary{margin:6px 0 14px;padding:9px 12px;border-radius:10px;background:var(--surface-2);font-size:12.5px;line-height:1.5;color:#d5dbe2}
 .sheet-actions{position:sticky;bottom:calc(-18px - var(--ib));display:flex;gap:8px;margin:0 -20px calc(-18px - var(--ib));
