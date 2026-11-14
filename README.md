@@ -59,3 +59,9 @@ WebXR은 **HTTPS 주소**에서만 동작합니다.
 같은 저장소에 들어 있는 별도 프로젝트입니다. 부산 17개 명소를 지하철·버스로 여행하는 WebXR 앱이며,
 Meta Quest 용 APK(`busan-vr/release/`)와 웹 빌드(`busan/` → GitHub Pages `…/Shwo/busan/`)를 포함합니다.
 실행·빌드 방법은 [`busan-vr/README.md`](busan-vr/README.md) 를 참고하세요.
+
+---
+
+## Keep Screen On (`keep-screen-on/`)
+
+화면이 자동으로 꺼지지 않게 해 주는 안드로이드 앱입니다. APK: `keep-screen-on/release/keep-screen-on.apk`

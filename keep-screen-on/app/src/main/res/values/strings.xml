@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">Keep Screen On</string>
+    <string name="tile_label">Screen On</string>
+</resources>
