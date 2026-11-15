@@ -1,0 +1,24 @@
+plugins { id 'com.android.application' }
+android {
+    namespace 'kr.shwo.sitegrabber'
+    compileSdk 34
+    defaultConfig {
+        applicationId 'kr.shwo.sitegrabber'
+        minSdk 26
+        targetSdk 34
+        versionCode 1
+        versionName '1.0'
+    }
+    signingConfigs {
+        release {
+            storeFile file('../sitegrabber.keystore')
+            storePassword 'sitegrabber1234'
+            keyAlias 'sitegrabber'
+            keyPassword 'sitegrabber1234'
+        }
+    }
+    buildTypes { release { minifyEnabled false; signingConfig signingConfigs.release } }
+    compileOptions { sourceCompatibility JavaVersion.VERSION_1_8; targetCompatibility JavaVersion.VERSION_1_8 }
+    packaging { resources { excludes += ['META-INF/*'] } }
+}
+dependencies { implementation 'org.jsoup:jsoup:1.18.1' }

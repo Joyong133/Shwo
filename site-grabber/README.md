@@ -4,8 +4,22 @@
 Python 3.8+ 만 있으면 되고 추가 설치는 필요 없습니다.
 
 ## 실행
-- **윈도우**: `grab.bat` 더블클릭 → 주소 입력 → 페이지 수 입력(엔터=300)
-- **명령줄**: `python grab.py https://example.com/`
+| 기기 | 방법 |
+|---|---|
+| **안드로이드 폰** | `release/site-grabber.apk` 설치 → 주소 입력(또는 다른 앱에서 링크 '공유') → 가져오기 → '전부 저장 (ZIP)' |
+| **윈도우** | `grab.bat` 더블클릭 → 주소 입력 → 페이지 수 입력(엔터=300) |
+| **리눅스 / macOS** | `./grab.sh https://example.com/` (주소 없이 실행하면 물어봄) |
+| **안드로이드 (Termux)** | `pkg install python` 후 `python grab.py https://example.com/` |
+| **claude.ai** | https://claude.ai/artifact/XDLYiRaDdA8ZYrg84J1ZqA — Claude 데스크톱 앱에서만 동작 |
+
+아이폰은 앱 설치 파일을 따로 배포할 수 없어 지원하지 않습니다.
+
+### 안드로이드 앱 기능
+- 이미지·첨부파일 받기 (체크 해제 가능), robots.txt 준수
+- **JS 사이트 모드**: 화면 뒤 브라우저로 페이지를 그린 뒤 읽어서, 자바스크립트로 내용을 그리는 사이트도 가져옴 (느림, 첨부파일은 일반 모드와 같이 받음)
+- 목록에서 페이지를 누르면 본문 보기, 브라우저로 열기
+- 저장은 위치를 직접 고르는 방식이라 저장소 권한이 필요 없음. ZIP 안의 구성은 아래 표와 같음 (`pages/`, `text/`, `files/`, `all_text.txt`, `pages.csv`, `files.csv`)
+- 다시 빌드: `cd android && ./gradlew assembleRelease` (서명 키 `sitegrabber.keystore`, 비밀번호 `sitegrabber1234`)
 
 ## 결과 (`grabbed/<도메인>/`)
 | 파일/폴더 | 내용 |
