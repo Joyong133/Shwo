@@ -1,0 +1,27 @@
+plugins { id 'com.android.application' }
+android {
+    namespace 'kr.shwo.fmviewer'
+    compileSdk 34
+    defaultConfig {
+        applicationId 'kr.shwo.fmviewer'
+        minSdk 26
+        targetSdk 34
+        versionCode 1
+        versionName '1.0'
+    }
+    signingConfigs {
+        release {
+            storeFile file('../fmviewer.keystore')
+            storePassword 'fmviewer1234'
+            keyAlias 'fmviewer'
+            keyPassword 'fmviewer1234'
+        }
+    }
+    buildTypes {
+        release {
+            minifyEnabled false
+            signingConfig signingConfigs.release
+        }
+    }
+    compileOptions { sourceCompatibility JavaVersion.VERSION_1_8; targetCompatibility JavaVersion.VERSION_1_8 }
+}
