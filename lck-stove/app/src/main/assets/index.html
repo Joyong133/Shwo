@@ -41,6 +41,19 @@ main{padding:12px 16px 90px}
 .day{color:var(--sub);font-size:12px;font-weight:700;margin:14px 2px 6px}
 .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:12px;margin-bottom:8px;display:block;color:inherit;text-decoration:none}
 .card.new{border-color:var(--gold)}
+.pc{display:flex;gap:12px;align-items:center}
+.pcb{flex:1;min-width:0}
+.av{width:56px;height:56px;border-radius:14px;flex:none;position:relative;overflow:hidden;background:linear-gradient(160deg,var(--c,#3A404C),#0b0d11);display:grid;place-items:center}
+.av img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:50% 12%}
+.av em{font-style:normal;font-weight:800;font-size:15px;color:#fff;opacity:.85}
+.av.sm{width:26px;height:26px;border-radius:7px}
+.av.sm em{font-size:10px}
+.p{display:inline-flex;align-items:center;gap:6px}
+.news.fresh{border-color:var(--gold)}
+.nline{display:block;margin-top:8px;padding:8px 10px;background:rgba(200,155,60,.1);border-radius:9px;color:var(--text);text-decoration:none;font-size:13px;line-height:1.45}
+.nline b{color:var(--gold);margin-right:4px}
+.nline span{color:var(--sub);font-size:12px}
+.news .who{display:flex;gap:4px;float:right;margin-left:8px}
 .row{display:flex;align-items:center;gap:8px}
 .name{font-weight:800;font-size:16px}
 .real{color:var(--sub);font-size:12px}
@@ -64,7 +77,7 @@ main{padding:12px 16px 90px}
 .teamcard.open .teambody{display:block}
 .sect{font-size:12px;color:var(--sub);margin:10px 0 6px;font-weight:700}
 .plist{display:flex;flex-wrap:wrap;gap:6px}
-.p{background:var(--card2);border-radius:8px;padding:5px 9px;font-size:13px}
+.p{background:var(--card2);border-radius:8px;padding:4px 9px 4px 4px;font-size:13px}
 .p.in{border-left:3px solid var(--in)} .p.out{border-left:3px solid var(--out)}
 .p small{color:var(--sub);margin-left:4px}
 .news{display:block;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:12px;margin-bottom:8px;color:inherit;text-decoration:none}
@@ -115,7 +128,7 @@ main{padding:12px 16px 90px}
   <div class="opt"><div>LCK 1군만 보기<small>끄면 LCK CL·아카데미 등 한국 팀 전체</small></div><button class="sw" id="optLck"></button></div>
   <div class="opt"><div>새 소식 알림<small>앱이 꺼져 있어도 약 15분마다 확인</small></div><button class="sw" id="optNotify"></button></div>
   <div class="opt"><div>집계 시작일<small>이 날짜 이후 로스터 변동만 표시</small></div><input type="date" id="optStart"></div>
-  <div class="opt"><div>자동 새로고침<small>앱을 보고 있는 동안 2분마다</small></div><button class="sw" id="optAuto"></button></div>
+  <div class="opt"><div>자동 새로고침<small>앱을 보고 있는 동안 3분마다</small></div><button class="sw" id="optAuto"></button></div>
   <div class="foot">로스터 데이터: Leaguepedia(lol.fandom.com, CC BY-SA)<br>뉴스: Google 뉴스 · 재계약 소식은 뉴스 탭에서 확인하세요<br><span id="ver"></span></div>
 </div>
 <div class="toast" id="toast"></div>
@@ -144,8 +157,8 @@ const TEAMS = [
   { id: 'drx',  ko: 'DRX',       ab: 'DRX', color: '#4C7DFF', test: (t) => t.includes('drx') },
 ];
 const ACADEMY = /academy|challengers|youth|rookies|trainee/i;
-const FALLBACK_NAMES = ['T1','Gen.G','Hanwha Life Esports','Dplus KIA','KT Rolster','BNK FEARX','Nongshim RedForce',
-  'DN Freecs','DN SOOPers','OKSavingsBank BRION','HANJIN BRION','BRION','DRX','KIWOOM DRX'];
+const FALLBACK_NAMES = ['T1','Gen.G','Hanwha Life Esports','Dplus Kia','Dplus KIA','KT Rolster','BNK FEARX','Nongshim RedForce',
+  'DN Freecs','DN SOOPers','OKSavingsBank BRION','HANJIN BRION','DRX','Kiwoom DRX'];
 function teamInfo(name) {
   if (!name) return null;
   const t = name.toLowerCase();
@@ -199,11 +212,28 @@ function httpGet(url) {
 }
 const API = 'https://lol.fandom.com/api.php';
 function cargoUrl(p) {
-  return API + '?' + new URLSearchParams({ action: 'cargoquery', format: 'json', limit: '500', ...p }).toString();
+  return API + '?' + new URLSearchParams({ action: 'cargoquery', format: 'json', limit: '500', maxage: '0', smaxage: '0', ...p }).toString();
+}
+// Leaguepedia 요청 한도 보호: 순서대로 0.7초 간격, 한도 초과 시 기다렸다 재시도
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+let apiChain = Promise.resolve();
+function apiGet(url) {
+  const run = async () => {
+    for (let attempt = 0; ; attempt++) {
+      let j;
+      try { j = JSON.parse(await httpGet(url)); } catch (e) { j = { error: { info: /429/.test(e.message) ? 'rate limit' : e.message } }; }
+      const err = j.error ? (j.error.info || j.error.code || '') : '';
+      if (err && /rate ?limit/i.test(err + (j.error.code || '')) && attempt < 2) { await sleep(5000 * (attempt + 1)); continue; }
+      if (err) throw new Error(/rate ?limit/i.test(err) ? '위키 요청이 많아 잠시 제한됐어요. 1~2분 뒤 다시 시도하세요.' : err);
+      return j;
+    }
+  };
+  const p = apiChain.then(run, run);
+  apiChain = p.catch(() => {}).then(() => sleep(700));
+  return p;
 }
 async function cargo(p) {
-  const j = JSON.parse(await httpGet(cargoUrl(p)));
-  if (j.error) throw new Error(j.error.info || j.error.code);
+  const j = await apiGet(cargoUrl(p));
   return (j.cargoquery || []).map((x) => x.title);
 }
 const q = (s) => '"' + String(s).replace(/\\/g, '\\\\').replace(/"/g, '\\"') + '"';
@@ -224,23 +254,28 @@ async function loadMoves() {
     if (!watch || more.length) watch = cargoUrl(nameQ);
   }
   const korean = rows.map(normEv);
+  const sig = korean.map(evKey).sort().join('\n');
+  const prev = store.get('cache.events', []);
+  const unchanged = prev.length && sig === store.get('cache.sig', '') && store.get('cache.start', '') === start;
   if (hasNative && watch) {
     Native.setWatch(watch, !!settings.lckOnly);
     Native.syncSeen(JSON.stringify(korean.map(evKey)));
   }
   // 관련 선수들의 다른 지역 이동(LPL 등)까지 포함해 전체 이력 조회
+  if (unchanged) return { events: prev, changed: false };
   const players = [...new Set(korean.map((e) => e.player))].filter(Boolean);
-  let all = korean.slice();
+  let all = korean.slice(), complete = true;
   try {
     for (let i = 0; i < players.length; i += 40) {
       const chunk = players.slice(i, i + 40);
       const r = await cargo({ ...base, tables: 'RosterChanges=RC', where: `RC.Player IN (${chunk.map(q).join(',')}) AND RC.Date_Sort >= "${start}"` });
       all = all.concat(r.map(normEv));
     }
-  } catch (e) { console.warn('history query', e); }
+  } catch (e) { console.warn('history query', e); complete = false; }
   const uniq = new Map();
   for (const e of all) uniq.set(evKey(e), e);
-  return [...uniq.values()];
+  if (complete) { store.set('cache.sig', sig); store.set('cache.start', start); }
+  return { events: [...uniq.values()], changed: true };
 }
 async function loadRoster(teamNames) {
   if (!teamNames.length) return [];
@@ -248,10 +283,10 @@ async function loadRoster(teamNames) {
   return r.map((x) => ({ id: x.ID, team: x.Team, role: x.Role }));
 }
 async function loadNews() {
-  const queries = ['LCK 스토브리그', 'LCK 영입 OR 재계약 OR FA OR 이적'];
+  const queries = ['LCK 스토브리그', 'LCK FA 영입 OR 재계약 OR 오피셜', 'LCK 이적 OR 결별 OR 합류 OR 계약'];
   const out = new Map();
   for (const query of queries) {
-    const url = 'https://news.google.com/rss/search?' + new URLSearchParams({ q: query + ' when:30d', hl: 'ko', gl: 'KR', ceid: 'KR:ko' });
+    const url = 'https://news.google.com/rss/search?' + new URLSearchParams({ q: query + ' when:14d', hl: 'ko', gl: 'KR', ceid: 'KR:ko' });
     const xml = new DOMParser().parseFromString(await httpGet(url), 'text/xml');
     for (const it of xml.querySelectorAll('item')) {
       const src = it.querySelector('source')?.textContent || '';
@@ -261,7 +296,88 @@ async function loadNews() {
       if (!out.has(key)) out.set(key, { title, link: it.querySelector('link')?.textContent || '', src, at: Date.parse(it.querySelector('pubDate')?.textContent || '') || 0 });
     }
   }
-  return [...out.values()].sort((a, b) => b.at - a.at).slice(0, 80);
+  return [...out.values()].sort((a, b) => b.at - a.at).slice(0, 120);
+}
+
+// ───────── 선수 사진 (Leaguepedia 프로필 사진 중 가장 최근 시즌) ─────────
+let photos = store.get('photos', {});
+let natives = store.get('natives', {});
+if (Date.now() - store.get('photosAt', 0) > 3 * 86400000) { photos = {}; natives = {}; store.set('photosAt', Date.now()); }
+function imgScore(f) {
+  const s = (f.FileName + ' ' + (f.Tournament || '')).toLowerCase();
+  const ys = s.match(/20\d\d/g); const y = ys ? Math.max(...ys.map(Number)) : 0;
+  let r = 0;
+  if (/cup/.test(s)) r = 1;
+  if (/split 1|spring|rounds 1/.test(s)) r = 2;
+  if (/msi|mid-season|first stand/.test(s)) r = 3;
+  if (/split 2|summer|rounds 2|rounds 3/.test(s)) r = 4;
+  if (/split 3|rounds 4|rounds 5|regional/.test(s)) r = 5;
+  if (/world|\bwc\b/.test(s)) r = 6;
+  return y * 10 + r;
+}
+async function mwQuery(params) {
+  const j = await apiGet(API + '?' + new URLSearchParams({ action: 'query', format: 'json', redirects: '1', ...params }));
+  const back = {}; // 정규화·리다이렉트된 제목 → 요청한 제목
+  for (const n of [...(j.query?.normalized || []), ...(j.query?.redirects || [])]) back[n.to] = back[n.from] || n.from;
+  return { pages: Object.values(j.query?.pages || {}), orig: (t) => back[t] || t };
+}
+async function loadPhotos(names) {
+  const need = [...new Set(names)].filter((n) => n && !(n in photos)).slice(0, 160);
+  if (!need.length) return false;
+  let failed = false;
+  for (let i = 0; i < need.length; i += 40) {
+    const chunk = need.slice(i, i + 40);
+    try {
+      const rows = await cargo({ tables: 'Players', fields: 'OverviewPage,NativeName', where: `OverviewPage IN (${chunk.map(q).join(',')})` });
+      for (const r of rows) if (r.NativeName && /[가-힣]{2,}/.test(r.NativeName)) natives[r.OverviewPage] = r.NativeName.trim();
+    } catch (e) { console.warn('native names', e); failed = true; }
+  }
+  store.set('natives', natives);
+  render();
+  const best = {};
+  for (let i = 0; i < need.length; i += 20) {
+    const chunk = need.slice(i, i + 20);
+    try {
+      const rows = await cargo({ tables: 'PlayerImages', fields: 'FileName,Link,Tournament', where: `Link IN (${chunk.map(q).join(',')}) AND FileName LIKE "%202%"` });
+      for (const r of rows) if (!best[r.Link] || imgScore(r) > imgScore(best[r.Link])) best[r.Link] = r;
+    } catch (e) { console.warn('photo list', e); failed = true; }
+  }
+  const files = Object.entries(best);
+  for (let i = 0; i < files.length; i += 40) {
+    const chunk = files.slice(i, i + 40);
+    try {
+      const { pages, orig } = await mwQuery({ prop: 'imageinfo', iiprop: 'url', iiurlwidth: '200', titles: chunk.map(([, f]) => 'File:' + f.FileName).join('|') });
+      const byTitle = {};
+      for (const pg of pages) if (pg.imageinfo?.[0]) byTitle[orig(pg.title)] = pg.imageinfo[0].thumburl || pg.imageinfo[0].url;
+      for (const [player, f] of chunk) { const u = byTitle['File:' + f.FileName]; if (u) photos[player] = u; }
+    } catch (e) { console.warn('photo url', e); failed = true; }
+  }
+  // 최근 사진이 없는 선수(신인 등)는 위키 문서 대표 이미지
+  const rest = need.filter((n) => !photos[n]);
+  for (let i = 0; i < rest.length; i += 40) {
+    const chunk = rest.slice(i, i + 40);
+    try {
+      const { pages, orig } = await mwQuery({ prop: 'pageimages', piprop: 'thumbnail', pithumbsize: '200', titles: chunk.join('|') });
+      for (const pg of pages) if (pg.thumbnail) photos[orig(pg.title)] = pg.thumbnail.source;
+    } catch (e) { console.warn('page image', e); failed = true; }
+  }
+  if (!failed) for (const n of need) if (!(n in photos)) photos[n] = '';
+  store.set('photos', photos);
+  return true;
+}
+function newsFor(p) {
+  const nn = natives[p.player];
+  if (!nn) return [];
+  const since = Date.parse(p.dt) - 86400000;
+  return state.news.filter((n) => n.at >= since && n.title.includes(nn)).slice(0, 2);
+}
+function playersIn(title) {
+  return visiblePlayers().filter((p) => natives[p.player] && title.includes(natives[p.player])).slice(0, 3);
+}
+function avatar(p, sm) {
+  const url = photos[p.player];
+  const ti = teamInfo(p.to) || teamInfo(p.from);
+  return `<span class="av ${sm ? 'sm' : ''}" style="--c:${ti ? ti.color : '#3A404C'}"><em>${esc(p.name.slice(0, 2))}</em>${url ? `<img src="${esc(url)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.remove()">` : ''}</span>`;
 }
 
 // ───────── 선수별 요약 ─────────
@@ -289,9 +405,10 @@ function buildPlayers(events) {
   }
   return out.sort((a, b) => b.dt.localeCompare(a.dt));
 }
-const KIND = { move: ['이적', 'k-move'], join: ['영입', 'k-join'], fa: ['FA·미정', 'k-fa'], stay: ['잔류', 'k-stay'] };
+const KIND = { move: ['이적', 'k-move'], join: ['영입', 'k-join'], fa: ['FA·미정', 'k-fa'], stay: ['잔류·직책변경', 'k-stay'] };
 function ago(dt) {
-  const d = Math.round((Date.parse(new Date().toISOString().slice(0, 10)) - Date.parse(dt)) / 86400000);
+  const n = new Date(); const today = Date.UTC(n.getFullYear(), n.getMonth(), n.getDate());
+  const d = Math.round((today - Date.parse(dt)) / 86400000);
   return d <= 0 ? '오늘' : d === 1 ? '어제' : d < 30 ? d + '일 전' : dt.slice(5).replace('-', '/');
 }
 function agoMs(t) {
@@ -309,10 +426,12 @@ function playerCard(p) {
   else if (p.kind === 'join') flow = `<span class="team dim"><i style="background:#444">+</i>신규·복귀</span><span class="arrow">→</span>${teamChip(p.to)}`;
   else if (p.kind === 'stay') flow = teamChip(p.to);
   else flow = `${teamChip(p.from)}<span class="arrow">→</span>${teamChip(p.to)}`;
-  return `<a class="card ${isNew ? 'new' : ''}" href="https://lol.fandom.com/wiki/${encodeURIComponent(p.player.replace(/ /g, '_'))}">
-    <div class="row">${p.role ? `<span class="role">${esc(p.role)}</span>` : ''}<span class="name">${esc(p.name)}</span>${p.real ? `<span class="real">${esc(p.real)}</span>` : ''}
+  const nw = newsFor(p);
+  const newsLine = (nw || []).map((n) => `<a class="nline" href="${esc(n.link)}"><b>최신 기사</b> ${esc(n.title)} <span>· ${esc(n.src)} ${agoMs(n.at)}</span></a>`).join('');
+  return `<div class="card ${isNew ? 'new' : ''}" data-href="https://lol.fandom.com/wiki/${encodeURIComponent(p.player.replace(/ /g, '_'))}">
+    <div class="pc">${avatar(p)}<div class="pcb"><div class="row">${p.role ? `<span class="role">${esc(p.role)}</span>` : ''}<span class="name">${esc(p.name)}</span>${p.real ? `<span class="real">${esc(p.real)}</span>` : ''}
     ${isNew ? '<span class="badge-new">NEW</span>' : ''}<span class="kind ${cls}">${label}</span></div>
-    <div class="flow">${flow}<span class="when">${ago(p.dt)}</span></div></a>`;
+    <div class="flow">${flow}<span class="when">${ago(p.dt)}</span></div></div></div>${newsLine}</div>`;
 }
 function statusBlock() {
   if (state.error && !state.events.length) return `<div class="msg err">불러오지 못했어요<br><small>${esc(state.error)}</small><br><br>인터넷 연결을 확인하고 ↻ 를 눌러주세요.</div>`;
@@ -348,7 +467,7 @@ function renderTeams() {
     const roster = state.roster.filter((r) => teamInfo(r.team)?.id === t.id)
       .map((r) => ({ ...r, ko: roleKo(r.role) }))
       .sort((a, b) => rank(a.ko) - rank(b.ko));
-    const pl = (arr, cls, side) => arr.length ? `<div class="plist">${arr.map((p) => `<span class="p ${cls}">${esc(p.name)}<small>${esc(p.role)}${side ? ' · ' + esc(side(p)) : ''}</small></span>`).join('')}</div>` : '<div class="real">없음</div>';
+    const pl = (arr, cls, side) => arr.length ? `<div class="plist">${arr.map((p) => `<span class="p ${cls}">${avatar(p, true)}${esc(p.name)}<small>${esc(p.role)}${side ? ' · ' + esc(side(p)) : ''}</small></span>`).join('')}</div>` : '<div class="real">없음</div>';
     return `<div class="teamcard ${open.includes(t.id) ? 'open' : ''}" data-tid="${t.id}">
       <div class="teamhead" style="border-left-color:${t.color}"><b>${t.ko}</b><span class="cnt"><span class="k-in" style="color:var(--in)">IN ${ins.length}</span> · <span style="color:var(--out)">OUT ${outs.length}</span> ▾</span></div>
       <div class="teambody">
@@ -370,7 +489,9 @@ function renderNews() {
   let list = state.news;
   if (state.q) list = list.filter((n) => n.title.toLowerCase().includes(state.q.toLowerCase()));
   return `<input class="search" id="q" placeholder="뉴스 검색 (예: 페이커, 재계약)" value="${esc(state.q)}">` +
-    list.map((n) => `<a class="news" href="${esc(n.link)}"><h3>${esc(n.title)}</h3><div class="meta">${esc(n.src)} · ${n.at ? agoMs(n.at) : ''}</div></a>`).join('');
+    list.map((n) => { const fresh = Date.now() - n.at < 3 * 3600e3;
+      const who = playersIn(n.title);
+      return `<a class="news ${fresh ? 'fresh' : ''}" href="${esc(n.link)}">${who.length ? `<span class="who">${who.map((p) => avatar(p, true)).join('')}</span>` : ''}<h3>${fresh ? '<span class="badge-new">NEW</span> ' : ''}${esc(n.title)}</h3><div class="meta">${esc(n.src)} · ${n.at ? agoMs(n.at) : ''}</div></a>`; }).join('');
 }
 function render() {
   const main = $('#main');
@@ -396,10 +517,12 @@ async function refresh(manual) {
   state.loading = true; state.error = ''; render();
   const newsP = loadNews().then((n) => { state.news = n; state.newsError = ''; store.set('cache.news', n); }).catch((e) => { state.newsError = e.message; });
   try {
-    const events = await loadMoves();
+    const { events, changed } = await loadMoves();
     state.events = events;
     const lckNames = [...new Set(events.map((e) => e.team).filter(isLck))];
-    try { state.roster = await loadRoster(lckNames); store.set('cache.roster', state.roster); } catch (e) { console.warn('roster', e); }
+    if (changed || !state.roster.length) try { state.roster = await loadRoster(lckNames); store.set('cache.roster', state.roster); } catch (e) { console.warn('roster', e); }
+    loadPhotos(buildPlayers(events).filter((p) => p.lck).map((p) => p.player).concat(buildPlayers(events).map((p) => p.player)))
+      .then((changed) => { if (changed) render(); }).catch((e) => console.warn('photos', e));
     // 새 소식 판정
     const keys = buildPlayers(events).map((p) => p.key);
     let added = 0;
@@ -419,7 +542,7 @@ async function refresh(manual) {
   render();
 }
 let timer = null;
-function schedule() { clearInterval(timer); if (settings.auto) timer = setInterval(() => { if (!document.hidden) refresh(false); }, 120000); }
+function schedule() { clearInterval(timer); if (settings.auto) timer = setInterval(() => { if (!document.hidden) refresh(false); }, 180000); }
 window.onAppResume = () => { if (Date.now() - state.updatedAt > 60000) refresh(false); else render(); };
 window.onAppBack = () => {
   if ($('#sheet').classList.contains('on')) { closeSheet(); return true; }
@@ -429,6 +552,8 @@ window.onAppBack = () => {
 
 // ───────── 이벤트 ─────────
 document.addEventListener('click', (ev) => {
+  const card = ev.target.closest('.card[data-href]');
+  if (card && !ev.target.closest('a')) { location.href = card.dataset.href; return; }
   const t = ev.target.closest('[data-tab],[data-filter],[data-team],.teamhead');
   if (!t) return;
   if (t.dataset.tab) { state.tab = t.dataset.tab; state.q = ''; render(); window.scrollTo(0, 0); }
