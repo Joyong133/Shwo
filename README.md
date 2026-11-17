@@ -59,3 +59,9 @@ WebXR은 **HTTPS 주소**에서만 동작합니다.
 같은 저장소에 들어 있는 별도 프로젝트입니다. 부산 17개 명소를 지하철·버스로 여행하는 WebXR 앱이며,
 Meta Quest 용 APK(`busan-vr/release/`)와 웹 빌드(`busan/` → GitHub Pages `…/Shwo/busan/`)를 포함합니다.
 실행·빌드 방법은 [`busan-vr/README.md`](busan-vr/README.md) 를 참고하세요.
+
+---
+
+## LCK 스토브리그 앱 (`lck-stove/`)
+
+LCK 오프시즌 이적·FA·뉴스를 실시간으로 보는 안드로이드 앱. 설치 파일: [`lck-stove/release/lck-stove.apk`](lck-stove/release/lck-stove.apk) · 자세한 내용은 [`lck-stove/README.md`](lck-stove/README.md)

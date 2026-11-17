@@ -1,0 +1,6 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108">
+    <!-- 화살표 두 개(이적) + 불꽃(스토브) -->
+    <path android:fillColor="#C89B3C" android:pathData="M54,26c6,9 14,14 14,26a14,14 0 0 1 -28,0c0,-6 3,-10 6,-13c0,5 2,8 5,9c-1,-8 1,-15 3,-22z"/>
+    <path android:fillColor="#FFFFFF" android:pathData="M30,72h40l-6,-6h5l8,8l-8,8h-5l6,-6h-40z"/>
+</vector>

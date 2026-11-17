@@ -1,0 +1,467 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>LCK 스토브리그</title>
+<style>
+:root{
+  --bg:#0E1116; --card:#171B22; --card2:#1E232C; --line:#2A303B;
+  --text:#E8EAED; --sub:#9AA3AF; --gold:#C89B3C; --in:#3DDC97; --out:#FF6B6B; --fa:#FFB547; --stay:#7AA7FF;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,"Pretendard","Noto Sans KR",Roboto,sans-serif;font-size:15px}
+button{font:inherit;color:inherit}
+header{position:sticky;top:0;z-index:5;background:var(--bg);padding:12px 16px 0;border-bottom:1px solid var(--line)}
+.top{display:flex;align-items:center;gap:10px}
+.top h1{font-size:19px;margin:0;font-weight:800;letter-spacing:-.3px}
+.top h1 span{color:var(--gold)}
+.live{display:flex;align-items:center;gap:6px;color:var(--sub);font-size:12px;margin-left:auto}
+.dot{width:8px;height:8px;border-radius:50%;background:#555}
+.dot.on{background:var(--in);box-shadow:0 0 0 0 rgba(61,220,151,.6);animation:pulse 2s infinite}
+.dot.err{background:var(--out)}
+@keyframes pulse{70%{box-shadow:0 0 0 8px rgba(61,220,151,0)}100%{box-shadow:0 0 0 0 rgba(61,220,151,0)}}
+.iconbtn{background:var(--card2);border:1px solid var(--line);border-radius:10px;width:36px;height:36px;display:grid;place-items:center;font-size:17px}
+.iconbtn.spin span{display:inline-block;animation:spin 1s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.stats{display:flex;gap:8px;margin:12px 0 10px}
+.stat{flex:1;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:8px 10px}
+.stat b{display:block;font-size:20px}
+.stat small{color:var(--sub);font-size:11px}
+.tabs{display:flex;gap:4px}
+.tab{flex:1;background:none;border:0;padding:10px 0 11px;color:var(--sub);font-weight:600;border-bottom:2px solid transparent}
+.tab.on{color:var(--text);border-color:var(--gold)}
+.tab .n{font-size:11px;background:var(--out);color:#fff;border-radius:8px;padding:0 5px;margin-left:3px;vertical-align:2px}
+main{padding:12px 16px 90px}
+.bar{display:flex;gap:6px;overflow-x:auto;padding-bottom:8px;scrollbar-width:none}
+.bar::-webkit-scrollbar{display:none}
+.chip{flex:none;background:var(--card);border:1px solid var(--line);border-radius:999px;padding:6px 12px;font-size:13px;color:var(--sub)}
+.chip.on{background:var(--gold);color:#111;border-color:var(--gold);font-weight:700}
+.search{width:100%;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px 12px;color:var(--text);font-size:14px;margin-bottom:10px;outline:none}
+.day{color:var(--sub);font-size:12px;font-weight:700;margin:14px 2px 6px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:12px;margin-bottom:8px;display:block;color:inherit;text-decoration:none}
+.card.new{border-color:var(--gold)}
+.row{display:flex;align-items:center;gap:8px}
+.name{font-weight:800;font-size:16px}
+.real{color:var(--sub);font-size:12px}
+.role{font-size:11px;border:1px solid var(--line);border-radius:6px;padding:1px 6px;color:var(--sub)}
+.badge-new{font-size:10px;background:var(--gold);color:#111;border-radius:5px;padding:1px 5px;font-weight:800}
+.kind{margin-left:auto;font-size:12px;font-weight:700}
+.k-move{color:var(--in)} .k-join{color:var(--in)} .k-fa{color:var(--fa)} .k-stay{color:var(--stay)} .k-leave{color:var(--out)}
+.flow{display:flex;align-items:center;gap:8px;margin-top:9px;flex-wrap:wrap}
+.team{display:inline-flex;align-items:center;gap:6px;background:var(--card2);border-radius:8px;padding:4px 9px 4px 4px;font-size:13px;font-weight:600}
+.team i{width:20px;height:20px;border-radius:6px;display:grid;place-items:center;font-style:normal;font-size:9px;font-weight:900;color:#fff}
+.team.dim{opacity:.75}
+.arrow{color:var(--sub)}
+.when{color:var(--sub);font-size:12px;margin-left:auto}
+.empty,.msg{color:var(--sub);text-align:center;padding:30px 10px;font-size:14px;line-height:1.6}
+.msg.err{color:var(--out)}
+.teamcard{background:var(--card);border:1px solid var(--line);border-radius:14px;margin-bottom:10px;overflow:hidden}
+.teamhead{display:flex;align-items:center;gap:10px;padding:12px;border-left:5px solid #666}
+.teamhead b{font-size:16px}
+.teamhead .cnt{margin-left:auto;font-size:12px;color:var(--sub)}
+.teambody{padding:0 12px 12px;display:none}
+.teamcard.open .teambody{display:block}
+.sect{font-size:12px;color:var(--sub);margin:10px 0 6px;font-weight:700}
+.plist{display:flex;flex-wrap:wrap;gap:6px}
+.p{background:var(--card2);border-radius:8px;padding:5px 9px;font-size:13px}
+.p.in{border-left:3px solid var(--in)} .p.out{border-left:3px solid var(--out)}
+.p small{color:var(--sub);margin-left:4px}
+.news{display:block;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:12px;margin-bottom:8px;color:inherit;text-decoration:none}
+.news h3{margin:0 0 6px;font-size:15px;line-height:1.4;font-weight:600}
+.news .meta{color:var(--sub);font-size:12px}
+.sheet-bg{position:fixed;inset:0;background:rgba(0,0,0,.55);display:none;z-index:20}
+.sheet{position:fixed;left:0;right:0;bottom:0;background:var(--card);border-radius:18px 18px 0 0;padding:18px 16px 28px;z-index:21;display:none}
+.sheet.on,.sheet-bg.on{display:block}
+.sheet h2{margin:0 0 14px;font-size:17px}
+.opt{display:flex;align-items:center;justify-content:space-between;padding:12px 0;border-bottom:1px solid var(--line);gap:12px}
+.opt small{display:block;color:var(--sub);font-size:12px;margin-top:2px}
+.opt input[type=date]{background:var(--card2);color:var(--text);border:1px solid var(--line);border-radius:8px;padding:6px}
+.sw{width:46px;height:28px;border-radius:14px;background:#444;position:relative;border:0;flex:none}
+.sw::after{content:"";position:absolute;top:3px;left:3px;width:22px;height:22px;border-radius:50%;background:#fff;transition:.2s}
+.sw.on{background:var(--gold)} .sw.on::after{left:21px}
+.foot{color:var(--sub);font-size:11px;text-align:center;margin-top:20px;line-height:1.6}
+.toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%) translateY(80px);opacity:0;pointer-events:none;background:var(--gold);color:#111;font-weight:700;padding:10px 16px;border-radius:12px;transition:.3s;z-index:30;white-space:nowrap}
+.toast.on{transform:translateX(-50%) translateY(0);opacity:1}
+.skel{height:76px;border-radius:14px;margin-bottom:8px;background:linear-gradient(90deg,var(--card) 25%,var(--card2) 50%,var(--card) 75%);background-size:200% 100%;animation:sk 1.2s infinite}
+@keyframes sk{to{background-position:-200% 0}}
+</style>
+</head>
+<body>
+<header>
+  <div class="top">
+    <h1>LCK <span>스토브리그</span></h1>
+    <div class="live"><div class="dot" id="dot"></div><span id="updated">불러오는 중…</span></div>
+    <button class="iconbtn" id="refresh" aria-label="새로고침"><span>↻</span></button>
+    <button class="iconbtn" id="settingsBtn" aria-label="설정">⚙</button>
+  </div>
+  <div class="stats">
+    <div class="stat"><b id="sMove">-</b><small>이적·영입</small></div>
+    <div class="stat"><b id="sFa">-</b><small>FA·미정</small></div>
+    <div class="stat"><b id="sNew">-</b><small>새 소식</small></div>
+  </div>
+  <nav class="tabs">
+    <button class="tab on" data-tab="feed">타임라인</button>
+    <button class="tab" data-tab="teams">팀별</button>
+    <button class="tab" data-tab="fa">FA</button>
+    <button class="tab" data-tab="news">뉴스</button>
+  </nav>
+</header>
+<main id="main"></main>
+
+<div class="sheet-bg" id="sheetBg"></div>
+<div class="sheet" id="sheet">
+  <h2>설정</h2>
+  <div class="opt"><div>LCK 1군만 보기<small>끄면 LCK CL·아카데미 등 한국 팀 전체</small></div><button class="sw" id="optLck"></button></div>
+  <div class="opt"><div>새 소식 알림<small>앱이 꺼져 있어도 약 15분마다 확인</small></div><button class="sw" id="optNotify"></button></div>
+  <div class="opt"><div>집계 시작일<small>이 날짜 이후 로스터 변동만 표시</small></div><input type="date" id="optStart"></div>
+  <div class="opt"><div>자동 새로고침<small>앱을 보고 있는 동안 2분마다</small></div><button class="sw" id="optAuto"></button></div>
+  <div class="foot">로스터 데이터: Leaguepedia(lol.fandom.com, CC BY-SA)<br>뉴스: Google 뉴스 · 재계약 소식은 뉴스 탭에서 확인하세요<br><span id="ver"></span></div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+'use strict';
+const $ = (s) => document.querySelector(s);
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const store = {
+  get(k, d) { try { const v = localStorage.getItem(k); return v == null ? d : JSON.parse(v); } catch { return d; } },
+  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} },
+};
+const hasNative = !!(window.Native && window.Native.fetch);
+
+// ───────── 팀 정보 ─────────
+const TEAMS = [
+  { id: 't1',   ko: 'T1',        ab: 'T1',  color: '#E2012D', test: (t) => t === 't1' },
+  { id: 'gen',  ko: '젠지',       ab: 'GEN', color: '#AA8A00', test: (t) => t.includes('gen.g') },
+  { id: 'hle',  ko: '한화생명',    ab: 'HLE', color: '#F37321', test: (t) => t.includes('hanwha') },
+  { id: 'dk',   ko: 'DK',        ab: 'DK',  color: '#1BB8B0', test: (t) => t.includes('dplus') || t === 'dk' },
+  { id: 'kt',   ko: 'KT',        ab: 'KT',  color: '#D7141A', test: (t) => t.includes('kt rolster') },
+  { id: 'fox',  ko: 'BNK 피어엑스', ab: 'BFX', color: '#E0A800', test: (t) => t.includes('fearx') },
+  { id: 'ns',   ko: '농심',       ab: 'NS',  color: '#C8102E', test: (t) => t.includes('nongshim') },
+  { id: 'dn',   ko: 'DN 수퍼스',   ab: 'DNS', color: '#3B5BDB', test: (t) => t.includes('freecs') || t.includes('soopers') },
+  { id: 'bro',  ko: '브리온',      ab: 'BRO', color: '#0B6B4F', test: (t) => t.includes('brion') },
+  { id: 'drx',  ko: 'DRX',       ab: 'DRX', color: '#4C7DFF', test: (t) => t.includes('drx') },
+];
+const ACADEMY = /academy|challengers|youth|rookies|trainee/i;
+const FALLBACK_NAMES = ['T1','Gen.G','Hanwha Life Esports','Dplus KIA','KT Rolster','BNK FEARX','Nongshim RedForce',
+  'DN Freecs','DN SOOPers','OKSavingsBank BRION','HANJIN BRION','BRION','DRX','KIWOOM DRX'];
+function teamInfo(name) {
+  if (!name) return null;
+  const t = name.toLowerCase();
+  if (ACADEMY.test(t)) return null;
+  return TEAMS.find((x) => x.test(t)) || null;
+}
+const isLck = (name) => !!teamInfo(name);
+function teamChip(name, opts = {}) {
+  if (!name) return `<span class="team dim"><i style="background:#444">?</i>${esc(opts.empty || '미정')}</span>`;
+  const ti = teamInfo(name);
+  const color = ti ? ti.color : '#4A5160';
+  const ab = ti ? ti.ab : name.replace(/[^A-Za-z0-9]/g, '').slice(0, 3).toUpperCase() || '·';
+  return `<span class="team ${ti ? '' : 'dim'}"><i style="background:${color}">${esc(ab)}</i>${esc(ti ? ti.ko : name)}</span>`;
+}
+const ROLE = { top: '탑', jungle: '정글', mid: '미드', bot: '원딜', adc: '원딜', support: '서폿', coach: '코치', 'head coach': '감독',
+  'assistant coach': '코치', 'strategic coach': '전략코치', analyst: '분석관', manager: '매니저', 'general manager': '단장', owner: '구단주', streamer: '스트리머' };
+const roleKo = (r) => { if (!r) return ''; const k = r.toLowerCase().trim(); return ROLE[k] || r; };
+const ROLE_ORDER = ['탑','정글','미드','원딜','서폿','감독','코치','전략코치','분석관'];
+const rank = (r) => { const i = ROLE_ORDER.indexOf(r); return i < 0 ? 99 : i; };
+
+// ───────── 설정 / 상태 ─────────
+function defaultStart() {
+  const d = new Date();
+  const y = d.getMonth() >= 9 ? d.getFullYear() : d.getFullYear() - 1; // 10월 이후면 올해 오프시즌
+  return `${y}-10-15`;
+}
+const settings = Object.assign({ lckOnly: true, start: defaultStart(), auto: true, notify: true }, store.get('settings', {}));
+if (hasNative && Native.getNotify) settings.notify = Native.getNotify();
+const state = {
+  tab: 'feed', filter: 'all', teamFilter: '', q: '',
+  events: store.get('cache.events', []), roster: store.get('cache.roster', []), news: store.get('cache.news', []),
+  updatedAt: store.get('cache.updatedAt', 0), loading: false, error: '', newsError: '',
+  newKeys: new Set(),
+};
+let seenKeys = new Set(store.get('seenKeys', []));
+const firstEver = !store.get('seenKeys', null);
+
+// ───────── 네트워크 ─────────
+let seq = 0; const pending = {};
+window.__nativeCb = (id, ok, body) => { const p = pending[id]; if (!p) return; delete pending[id]; ok ? p.res(body) : p.rej(new Error(body)); };
+function httpGet(url) {
+  if (hasNative) {
+    return new Promise((res, rej) => {
+      const id = 'c' + (++seq);
+      pending[id] = { res, rej };
+      Native.fetch(id, url);
+      setTimeout(() => { if (pending[id]) { delete pending[id]; rej(new Error('시간 초과')); } }, 30000);
+    });
+  }
+  return fetch(url).then((r) => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.text(); });
+}
+const API = 'https://lol.fandom.com/api.php';
+function cargoUrl(p) {
+  return API + '?' + new URLSearchParams({ action: 'cargoquery', format: 'json', limit: '500', ...p }).toString();
+}
+async function cargo(p) {
+  const j = JSON.parse(await httpGet(cargoUrl(p)));
+  if (j.error) throw new Error(j.error.info || j.error.code);
+  return (j.cargoquery || []).map((x) => x.title);
+}
+const q = (s) => '"' + String(s).replace(/\\/g, '\\\\').replace(/"/g, '\\"') + '"';
+const FIELDS = 'RC.Date_Sort=Dt,RC.Player=Player,RC.Direction=Dir,RC.Team=Team,RC.Role=Role';
+const normEv = (r) => ({ dt: String(r.Dt || '').slice(0, 10), player: r.Player || '', dir: /join/i.test(r.Dir) ? 'Join' : 'Leave', team: r.Team || '', role: r.Role || '' });
+const evKey = (e) => `${e.player}|${e.dt}|${e.dir}|${e.team}`;
+
+async function loadMoves() {
+  const start = settings.start;
+  const base = { fields: FIELDS, order_by: 'RC.Date_Sort DESC' };
+  const joinQ = { ...base, tables: 'RosterChanges=RC,Teams=T', join_on: 'RC.Team=T.Name', where: `T.Region="Korea" AND RC.Date_Sort >= "${start}"` };
+  const nameQ = { ...base, tables: 'RosterChanges=RC', where: `RC.Team IN (${FALLBACK_NAMES.map(q).join(',')}) AND RC.Date_Sort >= "${start}"` };
+  let rows = [], watch = null;
+  try { rows = await cargo(joinQ); watch = cargoUrl(joinQ); } catch (e) { console.warn('join query', e); }
+  if (rows.length < 5) {
+    const more = await cargo(nameQ);
+    rows = rows.concat(more);
+    if (!watch || more.length) watch = cargoUrl(nameQ);
+  }
+  const korean = rows.map(normEv);
+  if (hasNative && watch) {
+    Native.setWatch(watch, !!settings.lckOnly);
+    Native.syncSeen(JSON.stringify(korean.map(evKey)));
+  }
+  // 관련 선수들의 다른 지역 이동(LPL 등)까지 포함해 전체 이력 조회
+  const players = [...new Set(korean.map((e) => e.player))].filter(Boolean);
+  let all = korean.slice();
+  try {
+    for (let i = 0; i < players.length; i += 40) {
+      const chunk = players.slice(i, i + 40);
+      const r = await cargo({ ...base, tables: 'RosterChanges=RC', where: `RC.Player IN (${chunk.map(q).join(',')}) AND RC.Date_Sort >= "${start}"` });
+      all = all.concat(r.map(normEv));
+    }
+  } catch (e) { console.warn('history query', e); }
+  const uniq = new Map();
+  for (const e of all) uniq.set(evKey(e), e);
+  return [...uniq.values()];
+}
+async function loadRoster(teamNames) {
+  if (!teamNames.length) return [];
+  const r = await cargo({ tables: 'Players', fields: 'ID,Team,Role', where: `Team IN (${teamNames.map(q).join(',')})`, order_by: 'Team' });
+  return r.map((x) => ({ id: x.ID, team: x.Team, role: x.Role }));
+}
+async function loadNews() {
+  const queries = ['LCK 스토브리그', 'LCK 영입 OR 재계약 OR FA OR 이적'];
+  const out = new Map();
+  for (const query of queries) {
+    const url = 'https://news.google.com/rss/search?' + new URLSearchParams({ q: query + ' when:30d', hl: 'ko', gl: 'KR', ceid: 'KR:ko' });
+    const xml = new DOMParser().parseFromString(await httpGet(url), 'text/xml');
+    for (const it of xml.querySelectorAll('item')) {
+      const src = it.querySelector('source')?.textContent || '';
+      let title = it.querySelector('title')?.textContent || '';
+      if (src && title.endsWith(' - ' + src)) title = title.slice(0, -(src.length + 3));
+      const key = title.replace(/\s+/g, '');
+      if (!out.has(key)) out.set(key, { title, link: it.querySelector('link')?.textContent || '', src, at: Date.parse(it.querySelector('pubDate')?.textContent || '') || 0 });
+    }
+  }
+  return [...out.values()].sort((a, b) => b.at - a.at).slice(0, 80);
+}
+
+// ───────── 선수별 요약 ─────────
+function buildPlayers(events) {
+  const by = new Map();
+  const sorted = events.slice().sort((a, b) => a.dt.localeCompare(b.dt) || (a.dir === 'Leave' ? -1 : 1));
+  for (const e of sorted) { if (!by.has(e.player)) by.set(e.player, []); by.get(e.player).push(e); }
+  const out = [];
+  for (const [player, evs] of by) {
+    const last = evs[evs.length - 1];
+    const prevLeave = [...evs].reverse().find((e) => e.dir === 'Leave' && e !== last);
+    let kind, from = null, to = null;
+    if (last.dir === 'Join') {
+      to = last.team;
+      from = prevLeave ? prevLeave.team : null;
+      kind = from && from === to ? 'stay' : from ? 'move' : 'join';
+    } else {
+      from = last.team;
+      kind = 'fa';
+    }
+    const role = roleKo(last.role || evs.find((e) => e.role)?.role);
+    const m = /^(.*?)\s*\((.+)\)$/.exec(player);
+    out.push({ player, name: m ? m[1] : player, real: m ? m[2] : '', kind, from, to, role, dt: last.dt,
+      key: evKey(last), lck: isLck(from) || isLck(to), korean: true });
+  }
+  return out.sort((a, b) => b.dt.localeCompare(a.dt));
+}
+const KIND = { move: ['이적', 'k-move'], join: ['영입', 'k-join'], fa: ['FA·미정', 'k-fa'], stay: ['잔류', 'k-stay'] };
+function ago(dt) {
+  const d = Math.round((Date.parse(new Date().toISOString().slice(0, 10)) - Date.parse(dt)) / 86400000);
+  return d <= 0 ? '오늘' : d === 1 ? '어제' : d < 30 ? d + '일 전' : dt.slice(5).replace('-', '/');
+}
+function agoMs(t) {
+  const m = Math.round((Date.now() - t) / 60000);
+  return m < 1 ? '방금' : m < 60 ? m + '분 전' : m < 1440 ? Math.round(m / 60) + '시간 전' : Math.round(m / 1440) + '일 전';
+}
+const visiblePlayers = () => buildPlayers(state.events).filter((p) => !settings.lckOnly || p.lck);
+
+// ───────── 렌더링 ─────────
+function playerCard(p) {
+  const [label, cls] = KIND[p.kind];
+  const isNew = state.newKeys.has(p.key);
+  let flow;
+  if (p.kind === 'fa') flow = `${teamChip(p.from)}<span class="arrow">→</span>${teamChip(null, { empty: 'FA·미정' })}`;
+  else if (p.kind === 'join') flow = `<span class="team dim"><i style="background:#444">+</i>신규·복귀</span><span class="arrow">→</span>${teamChip(p.to)}`;
+  else if (p.kind === 'stay') flow = teamChip(p.to);
+  else flow = `${teamChip(p.from)}<span class="arrow">→</span>${teamChip(p.to)}`;
+  return `<a class="card ${isNew ? 'new' : ''}" href="https://lol.fandom.com/wiki/${encodeURIComponent(p.player.replace(/ /g, '_'))}">
+    <div class="row">${p.role ? `<span class="role">${esc(p.role)}</span>` : ''}<span class="name">${esc(p.name)}</span>${p.real ? `<span class="real">${esc(p.real)}</span>` : ''}
+    ${isNew ? '<span class="badge-new">NEW</span>' : ''}<span class="kind ${cls}">${label}</span></div>
+    <div class="flow">${flow}<span class="when">${ago(p.dt)}</span></div></a>`;
+}
+function statusBlock() {
+  if (state.error && !state.events.length) return `<div class="msg err">불러오지 못했어요<br><small>${esc(state.error)}</small><br><br>인터넷 연결을 확인하고 ↻ 를 눌러주세요.</div>`;
+  if (state.loading && !state.events.length) return '<div class="skel"></div>'.repeat(6);
+  return '';
+}
+function renderFeed() {
+  const s = statusBlock(); if (s) return s;
+  let list = visiblePlayers();
+  if (state.filter !== 'all') list = list.filter((p) => p.kind === state.filter || (state.filter === 'move' && p.kind === 'join'));
+  if (state.teamFilter) list = list.filter((p) => teamInfo(p.from)?.id === state.teamFilter || teamInfo(p.to)?.id === state.teamFilter);
+  if (state.q) { const k = state.q.toLowerCase(); list = list.filter((p) => (p.player + ' ' + p.from + ' ' + p.to + ' ' + (teamInfo(p.from)?.ko || '') + ' ' + (teamInfo(p.to)?.ko || '')).toLowerCase().includes(k)); }
+  const chips = [['all', '전체'], ['move', '이적·영입'], ['fa', 'FA·미정'], ['stay', '잔류']]
+    .map(([k, l]) => `<button class="chip ${state.filter === k ? 'on' : ''}" data-filter="${k}">${l}</button>`).join('');
+  const tchips = `<button class="chip ${!state.teamFilter ? 'on' : ''}" data-team="">모든 팀</button>` +
+    TEAMS.map((t) => `<button class="chip ${state.teamFilter === t.id ? 'on' : ''}" data-team="${t.id}">${t.ko}</button>`).join('');
+  let html = `<input class="search" id="q" placeholder="선수·팀 검색" value="${esc(state.q)}"><div class="bar">${chips}</div><div class="bar">${tchips}</div>`;
+  if (!list.length) return html + `<div class="empty">${esc(settings.start)} 이후 표시할 로스터 변동이 없어요.</div>`;
+  let lastDay = '';
+  for (const p of list) {
+    if (p.dt !== lastDay) { lastDay = p.dt; html += `<div class="day">${p.dt.replace(/-/g, '.')} · ${ago(p.dt)}</div>`; }
+    html += playerCard(p);
+  }
+  return html;
+}
+function renderTeams() {
+  const s = statusBlock(); if (s) return s;
+  const players = visiblePlayers();
+  const open = store.get('openTeams', []);
+  return TEAMS.map((t) => {
+    const ins = players.filter((p) => teamInfo(p.to)?.id === t.id && p.kind !== 'stay');
+    const outs = players.filter((p) => teamInfo(p.from)?.id === t.id && teamInfo(p.to)?.id !== t.id);
+    const roster = state.roster.filter((r) => teamInfo(r.team)?.id === t.id)
+      .map((r) => ({ ...r, ko: roleKo(r.role) }))
+      .sort((a, b) => rank(a.ko) - rank(b.ko));
+    const pl = (arr, cls, side) => arr.length ? `<div class="plist">${arr.map((p) => `<span class="p ${cls}">${esc(p.name)}<small>${esc(p.role)}${side ? ' · ' + esc(side(p)) : ''}</small></span>`).join('')}</div>` : '<div class="real">없음</div>';
+    return `<div class="teamcard ${open.includes(t.id) ? 'open' : ''}" data-tid="${t.id}">
+      <div class="teamhead" style="border-left-color:${t.color}"><b>${t.ko}</b><span class="cnt"><span class="k-in" style="color:var(--in)">IN ${ins.length}</span> · <span style="color:var(--out)">OUT ${outs.length}</span> ▾</span></div>
+      <div class="teambody">
+        <div class="sect">영입 (IN)</div>${pl(ins, 'in', (p) => p.from ? (teamInfo(p.from)?.ko || p.from) + '에서' : '신규')}
+        <div class="sect">이탈 (OUT)</div>${pl(outs, 'out', (p) => p.to ? (teamInfo(p.to)?.ko || p.to) + '로' : 'FA')}
+        ${roster.length ? `<div class="sect">현재 등록 로스터 (위키 기준)</div><div class="plist">${roster.map((r) => `<span class="p">${esc(r.id)}<small>${esc(r.ko)}</small></span>`).join('')}</div>` : ''}
+      </div></div>`;
+  }).join('');
+}
+function renderFa() {
+  const s = statusBlock(); if (s) return s;
+  const list = visiblePlayers().filter((p) => p.kind === 'fa');
+  if (!list.length) return '<div class="empty">현재 FA·행선지 미정 선수가 없어요.</div>';
+  return `<div class="real" style="margin:0 2px 10px">팀을 떠난 뒤 아직 새 팀 합류 기록이 없는 선수 ${list.length}명</div>` + list.map(playerCard).join('');
+}
+function renderNews() {
+  if (state.newsError && !state.news.length) return `<div class="msg err">뉴스를 불러오지 못했어요<br><small>${esc(state.newsError)}</small></div>`;
+  if (!state.news.length) return state.loading ? '<div class="skel"></div>'.repeat(6) : '<div class="empty">뉴스가 없어요.</div>';
+  let list = state.news;
+  if (state.q) list = list.filter((n) => n.title.toLowerCase().includes(state.q.toLowerCase()));
+  return `<input class="search" id="q" placeholder="뉴스 검색 (예: 페이커, 재계약)" value="${esc(state.q)}">` +
+    list.map((n) => `<a class="news" href="${esc(n.link)}"><h3>${esc(n.title)}</h3><div class="meta">${esc(n.src)} · ${n.at ? agoMs(n.at) : ''}</div></a>`).join('');
+}
+function render() {
+  const main = $('#main');
+  const focused = document.activeElement?.id === 'q';
+  const caret = focused ? document.activeElement.selectionStart : 0;
+  main.innerHTML = { feed: renderFeed, teams: renderTeams, fa: renderFa, news: renderNews }[state.tab]() +
+    `<div class="foot">출처: Leaguepedia · Google 뉴스<br>위키 편집 시점에 따라 실제 발표보다 늦거나 빠를 수 있어요</div>`;
+  if (focused) { const el = $('#q'); if (el) { el.focus(); el.setSelectionRange(caret, caret); } }
+  document.querySelectorAll('.tab').forEach((b) => b.classList.toggle('on', b.dataset.tab === state.tab));
+  const players = visiblePlayers();
+  $('#sMove').textContent = state.events.length ? players.filter((p) => p.kind === 'move' || p.kind === 'join').length : '-';
+  $('#sFa').textContent = state.events.length ? players.filter((p) => p.kind === 'fa').length : '-';
+  $('#sNew').textContent = state.events.length ? players.filter((p) => state.newKeys.has(p.key)).length : '-';
+  $('#updated').textContent = state.loading ? '갱신 중…' : state.updatedAt ? agoMs(state.updatedAt) + ' 갱신' : '-';
+  $('#dot').className = 'dot ' + (state.error ? 'err' : settings.auto && state.updatedAt ? 'on' : '');
+  $('#refresh').classList.toggle('spin', state.loading);
+}
+
+// ───────── 갱신 ─────────
+function toast(msg) { const t = $('#toast'); t.textContent = msg; t.classList.add('on'); clearTimeout(toast.t); toast.t = setTimeout(() => t.classList.remove('on'), 2600); }
+async function refresh(manual) {
+  if (state.loading) return;
+  state.loading = true; state.error = ''; render();
+  const newsP = loadNews().then((n) => { state.news = n; state.newsError = ''; store.set('cache.news', n); }).catch((e) => { state.newsError = e.message; });
+  try {
+    const events = await loadMoves();
+    state.events = events;
+    const lckNames = [...new Set(events.map((e) => e.team).filter(isLck))];
+    try { state.roster = await loadRoster(lckNames); store.set('cache.roster', state.roster); } catch (e) { console.warn('roster', e); }
+    // 새 소식 판정
+    const keys = buildPlayers(events).map((p) => p.key);
+    let added = 0;
+    if (!firstEver || seenKeys.size) for (const k of keys) if (!seenKeys.has(k)) { state.newKeys.add(k); added++; }
+    keys.forEach((k) => seenKeys.add(k));
+    store.set('seenKeys', [...seenKeys].slice(-3000));
+    state.updatedAt = Date.now();
+    store.set('cache.events', events); store.set('cache.updatedAt', state.updatedAt);
+    if (added && !manual) toast(`새 로스터 소식 ${added}건`);
+    else if (manual) toast(added ? `새 소식 ${added}건` : '최신 상태예요');
+  } catch (e) {
+    state.error = e.message || String(e);
+    if (manual || !state.events.length) toast('불러오기 실패: ' + state.error.slice(0, 30));
+  }
+  await newsP;
+  state.loading = false;
+  render();
+}
+let timer = null;
+function schedule() { clearInterval(timer); if (settings.auto) timer = setInterval(() => { if (!document.hidden) refresh(false); }, 120000); }
+window.onAppResume = () => { if (Date.now() - state.updatedAt > 60000) refresh(false); else render(); };
+window.onAppBack = () => {
+  if ($('#sheet').classList.contains('on')) { closeSheet(); return true; }
+  if (state.tab !== 'feed') { state.tab = 'feed'; render(); window.scrollTo(0, 0); return true; }
+  return false;
+};
+
+// ───────── 이벤트 ─────────
+document.addEventListener('click', (ev) => {
+  const t = ev.target.closest('[data-tab],[data-filter],[data-team],.teamhead');
+  if (!t) return;
+  if (t.dataset.tab) { state.tab = t.dataset.tab; state.q = ''; render(); window.scrollTo(0, 0); }
+  else if (t.dataset.filter) { state.filter = t.dataset.filter; render(); }
+  else if (t.dataset.team !== undefined) { state.teamFilter = t.dataset.team; render(); }
+  else if (t.classList.contains('teamhead')) {
+    const card = t.parentElement; card.classList.toggle('open');
+    store.set('openTeams', [...document.querySelectorAll('.teamcard.open')].map((c) => c.dataset.tid));
+  }
+});
+document.addEventListener('input', (ev) => { if (ev.target.id === 'q') { state.q = ev.target.value; render(); } });
+$('#refresh').onclick = () => refresh(true);
+const sheet = $('#sheet'), sheetBg = $('#sheetBg');
+function syncSheet() {
+  $('#optLck').classList.toggle('on', settings.lckOnly);
+  $('#optNotify').classList.toggle('on', settings.notify);
+  $('#optAuto').classList.toggle('on', settings.auto);
+  $('#optStart').value = settings.start;
+}
+function closeSheet() { sheet.classList.remove('on'); sheetBg.classList.remove('on'); }
+$('#settingsBtn').onclick = () => { syncSheet(); sheet.classList.add('on'); sheetBg.classList.add('on'); };
+sheetBg.onclick = closeSheet;
+const save = () => { store.set('settings', settings); syncSheet(); };
+$('#optLck').onclick = () => { settings.lckOnly = !settings.lckOnly; save(); render(); if (hasNative) refresh(false); };
+$('#optAuto').onclick = () => { settings.auto = !settings.auto; save(); schedule(); render(); };
+$('#optNotify').onclick = () => { settings.notify = !settings.notify; save(); if (hasNative) Native.setNotify(settings.notify); };
+$('#optStart').onchange = (e) => { if (e.target.value) { settings.start = e.target.value; save(); state.events = []; refresh(true); } };
+$('#ver').textContent = hasNative && Native.version ? 'v' + Native.version() : '';
+
+render();
+refresh(false);
+schedule();
+setInterval(() => { if (!state.loading) $('#updated').textContent = state.updatedAt ? agoMs(state.updatedAt) + ' 갱신' : '-'; }, 30000);
+</script>
+</body>
+</html>

@@ -1,0 +1,31 @@
+plugins { id 'com.android.application' }
+
+android {
+    namespace 'kr.lckstove.app'
+    compileSdk 35
+    defaultConfig {
+        applicationId 'kr.lckstove.app'
+        minSdk 24
+        targetSdk 35
+        versionCode 1
+        versionName '1.0.0'
+    }
+    signingConfigs {
+        release {
+            storeFile file('lck-stove.keystore')
+            storePassword 'lckstove1234'
+            keyAlias 'lckstove'
+            keyPassword 'lckstove1234'
+        }
+    }
+    buildTypes {
+        release {
+            minifyEnabled false
+            signingConfig signingConfigs.release
+        }
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
