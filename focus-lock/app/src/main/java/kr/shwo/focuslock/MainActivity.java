@@ -104,6 +104,14 @@ public class MainActivity extends Activity {
                 "앱으로 휴대폰 화면을 PC·VR 헤드셋에 공유(캐스트)할 때",
                 Prefs.AUTO_RECORDING, Prefs.autoRecording(this));
 
+        // ── 원격 입력 ──
+        LinearLayout remote = card(col, 0xFFF5F5F5);
+        text(remote, "원격 조작도 막기", 17, true);
+        toggle(remote, "VR 컨트롤러·손·키보드·게임패드 입력 막기",
+                "잠금 중에는 VR 등에서 휴대폰으로 보내는 클릭·핀치·버튼·스틱·키보드 입력도 휴대폰에 전달되지 않습니다. "
+                        + "(볼륨·전원 버튼은 그대로 동작. 스틱 차단은 Android 14 이상)",
+                Prefs.BLOCK_REMOTE, Prefs.blockRemote(this));
+
         // ── 수동 잠금 시간 ──
         LinearLayout timeCard = card(col, 0xFFF5F5F5);
         text(timeCard, "직접 잠글 때 유지 시간 (집중 시간)", 17, true);

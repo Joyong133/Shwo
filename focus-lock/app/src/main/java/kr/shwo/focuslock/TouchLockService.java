@@ -1,6 +1,7 @@
 package kr.shwo.focuslock;
 
 import android.accessibilityservice.AccessibilityService;
+import android.accessibilityservice.AccessibilityServiceInfo;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
@@ -16,6 +17,7 @@ import android.os.SystemClock;
 import android.util.TypedValue;
 import android.view.Display;
 import android.view.Gravity;
+import android.view.InputDevice;
 import android.view.KeyEvent;
 import android.view.MotionEvent;
 import android.view.View;
@@ -39,6 +41,12 @@ import java.util.function.Consumer;
  *  - 자동: 외부 화면(USB-C/HDMI 모니터, AR·VR 글래스, 스마트뷰·Miracast 무선 미러링)이 연결됨
  *  - 자동: (Android 15+) 이 휴대폰 화면이 화면 공유·녹화되고 있음
  *  - 수동: 앱 / 빠른 설정 타일에서 직접 잠금 (선택한 시간이 지나면 자동 해제)
+ *
+ * 잠금 중에 함께 막는 원격 입력 (VR 등에서 휴대폰을 조작할 때)
+ *  - VR 컨트롤러 클릭·손 핀치가 휴대폰에 "터치"로 전달되는 경우 → 오버레이가 받아서 버림
+ *  - 마우스 포인터 클릭·스크롤 → 오버레이가 받아서 버림
+ *  - 키보드·게임패드·컨트롤러 버튼 (볼륨·전원 제외) → onKeyEvent 에서 버림
+ *  - 게임패드·컨트롤러 스틱, 휠 (Android 14+) → setMotionEventSources 로 가로채서 버림
  *
  * 잠금이 풀리는 경우
  *  - 볼륨 아래 버튼 3번 빠르게 (2초 안에)
@@ -143,6 +151,7 @@ public class TouchLockService extends AccessibilityService implements DisplayMan
         try { unregisterReceiver(screenReceiver); } catch (Exception ignored) {}
         removeRecordingDetection();
         removeOverlay();
+        setRemoteMotionBlock(false);
         instance = null;
         notifyListeners();
     }
@@ -241,6 +250,7 @@ public class TouchLockService extends AccessibilityService implements DisplayMan
         }
 
         if (isLocked() && screenOn) showOverlay(); else removeOverlay();
+        setRemoteMotionBlock(overlay != null && Prefs.blockRemote(this));
         notifyListeners();
     }
 
@@ -294,10 +304,11 @@ public class TouchLockService extends AccessibilityService implements DisplayMan
 
     @Override
     protected boolean onKeyEvent(KeyEvent event) {
-        if (event.getKeyCode() == KeyEvent.KEYCODE_VOLUME_DOWN
+        if (overlay == null) return false;
+        int code = event.getKeyCode();
+        if (code == KeyEvent.KEYCODE_VOLUME_DOWN
                 && event.getAction() == KeyEvent.ACTION_DOWN
-                && event.getRepeatCount() == 0
-                && overlay != null) {
+                && event.getRepeatCount() == 0) {
             long now = SystemClock.uptimeMillis();
             volumePresses[volumeIdx % VOLUME_PRESSES] = now;
             volumeIdx++;
@@ -307,7 +318,45 @@ public class TouchLockService extends AccessibilityService implements DisplayMan
                 unlockByUser("볼륨 버튼");
             }
         }
-        return false; // 볼륨 조절은 평소대로 동작
+        if (isPassThroughKey(code)) return false; // 볼륨·전원은 평소대로 동작
+        // 그 밖의 키 = 원격(VR 컨트롤러·키보드·게임패드)이 보내는 입력 → 버림
+        return Prefs.blockRemote(this);
+    }
+
+    private static boolean isPassThroughKey(int code) {
+        switch (code) {
+            case KeyEvent.KEYCODE_VOLUME_UP:
+            case KeyEvent.KEYCODE_VOLUME_DOWN:
+            case KeyEvent.KEYCODE_VOLUME_MUTE:
+            case KeyEvent.KEYCODE_POWER:
+            case KeyEvent.KEYCODE_SLEEP:
+            case KeyEvent.KEYCODE_WAKEUP:
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    // ───────────────────────── 원격 포인터·스틱 입력 차단 (Android 14+) ─────────────────────────
+
+    /** 조이스틱(게임패드·VR 컨트롤러 스틱), 트랙볼, 휠 입력을 서비스가 가로채서 버린다 */
+    private void setRemoteMotionBlock(boolean on) {
+        if (Build.VERSION.SDK_INT < 34) return;
+        try {
+            AccessibilityServiceInfo info = getServiceInfo();
+            if (info == null) return;
+            int sources = on ? (InputDevice.SOURCE_JOYSTICK
+                    | InputDevice.SOURCE_TRACKBALL
+                    | InputDevice.SOURCE_ROTARY_ENCODER) : 0;
+            if (info.getMotionEventSources() == sources) return;
+            info.setMotionEventSources(sources);
+            setServiceInfo(info);
+        } catch (Throwable ignored) {}
+    }
+
+    @Override
+    public void onMotionEvent(MotionEvent event) {
+        // 잠금 중 가로챈 스틱·휠 입력: 아무 데도 전달하지 않는다
     }
 
     // ───────────────────────── 오버레이 ─────────────────────────
