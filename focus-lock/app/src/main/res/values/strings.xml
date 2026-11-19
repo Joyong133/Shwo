@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">집중 터치잠금</string>
+    <string name="service_label">집중 터치잠금</string>
+    <string name="tile_label">터치 잠금</string>
+    <string name="service_summary">화면 미러링·외부 화면 연결 중에 휴대폰 화면 터치를 막습니다.</string>
+    <string name="service_description">휴대폰 화면을 모니터·TV·VR로 미러링하거나 외부 화면을 연결하면 휴대폰 화면 위에 투명한 막을 씌워 터치를 막습니다. 화면 내용은 읽거나 저장하지 않습니다. 잠금 해제: 볼륨 아래 버튼 3번 빠르게 누르기, 두 손가락으로 3초 누르기, 연결 해제, 또는 설정한 시간이 지나면 풀립니다.</string>
+</resources>

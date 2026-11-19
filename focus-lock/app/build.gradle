@@ -1,0 +1,24 @@
+plugins { id 'com.android.application' }
+
+android {
+    namespace 'kr.shwo.focuslock'
+    compileSdk 35
+    defaultConfig {
+        applicationId 'kr.shwo.focuslock'
+        minSdk 26
+        targetSdk 35
+        versionCode 1
+        versionName '1.0'
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+    buildTypes {
+        release {
+            minifyEnabled false
+            // 직접 설치(사이드로드)용: 디버그 키로 서명
+            signingConfig signingConfigs.debug
+        }
+    }
+}

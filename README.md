@@ -59,3 +59,10 @@ WebXR은 **HTTPS 주소**에서만 동작합니다.
 같은 저장소에 들어 있는 별도 프로젝트입니다. 부산 17개 명소를 지하철·버스로 여행하는 WebXR 앱이며,
 Meta Quest 용 APK(`busan-vr/release/`)와 웹 빌드(`busan/` → GitHub Pages `…/Shwo/busan/`)를 포함합니다.
 실행·빌드 방법은 [`busan-vr/README.md`](busan-vr/README.md) 를 참고하세요.
+
+---
+
+## 집중 터치잠금 (`focus-lock/`)
+
+휴대폰 화면을 모니터·VR로 미러링하거나 외부 화면을 연결하면 휴대폰 터치를 자동으로 막는 Android 앱입니다.
+APK: `focus-lock/release/focus-lock.apk` · 자세한 내용은 [`focus-lock/README.md`](focus-lock/README.md)
