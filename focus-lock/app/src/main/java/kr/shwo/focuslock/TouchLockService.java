@@ -129,6 +129,7 @@ public class TouchLockService extends AccessibilityService implements DisplayMan
         registerReceiver(screenReceiver, f);
 
         setupRecordingDetection();
+        RemoteApp.setControlCut(this, false); // 지난번에 꺼 둔 채 끝났다면 복구
         update();
     }
 
@@ -152,6 +153,7 @@ public class TouchLockService extends AccessibilityService implements DisplayMan
         removeRecordingDetection();
         removeOverlay();
         setRemoteMotionBlock(false);
+        RemoteApp.setControlCut(this, false);
         instance = null;
         notifyListeners();
     }
@@ -226,8 +228,11 @@ public class TouchLockService extends AccessibilityService implements DisplayMan
     boolean autoConditionActive() {
         boolean ext = Prefs.autoDisplay(this) && !externalDisplays().isEmpty();
         boolean rec = Prefs.autoRecording(this) && recording;
-        return ext || rec;
+        return ext || rec || remoteAppActive();
     }
+
+    /** Spatial Phone 등 원격 조작 앱이 연결 중 (상시 알림 감지) */
+    boolean remoteAppActive() { return Prefs.autoTarget(this) && NotifWatcher.isTargetActive(); }
 
     boolean isLocked() { return manualLock || (autoConditionActive() && !suppressAuto); }
     boolean isManualLock() { return manualLock; }
@@ -240,7 +245,7 @@ public class TouchLockService extends AccessibilityService implements DisplayMan
         if (instance != this) return;
 
         // 연결 상태가 바뀌면 "사용자가 풀어 둠" 기록을 지운다 (다음 연결 때 다시 자동 잠금)
-        int ext = externalDisplays().size() + (recording ? 1 : 0);
+        int ext = externalDisplays().size() + (recording ? 1 : 0) + (remoteAppActive() ? 1 : 0);
         if (ext != lastExternalCount) {
             if (lastExternalCount > 0 && ext == 0 && !manualLock && overlay != null) {
                 toast("연결이 끊겨 터치 잠금을 풀었습니다");
@@ -251,7 +256,30 @@ public class TouchLockService extends AccessibilityService implements DisplayMan
 
         if (isLocked() && screenOn) showOverlay(); else removeOverlay();
         setRemoteMotionBlock(overlay != null && Prefs.blockRemote(this));
+        updateControlCut();
         notifyListeners();
+    }
+
+    // ───────────────────────── 원격 조작 앱의 조작 기능 잠시 끄기 (고급) ─────────────────────────
+
+    private long cutAt;
+
+    private void updateControlCut() {
+        boolean want = overlay != null && Prefs.cutControl(this) && Prefs.blockRemote(this);
+        boolean was = RemoteApp.isControlCut(this);
+        if (want && !was) {
+            RemoteApp.setControlCut(this, true);
+            if (RemoteApp.isControlCut(this)) cutAt = SystemClock.elapsedRealtime();
+        } else if (!want && was) {
+            // 조작 기능을 끄자마자 그 앱의 연결이 끊겼다면 = 그 앱은 조작 기능 없이 연결을 유지하지 못함
+            // → 계속 켰다 껐다 하지 않도록 이 기능을 끈다
+            if (!manualLock && cutAt != 0 && SystemClock.elapsedRealtime() - cutAt < 5000) {
+                Prefs.put(this, Prefs.CUT_CONTROL, false);
+                toast("조작 기능을 끄면 연결이 끊겨서 '조작 기능 완전히 끄기'를 해제했습니다");
+            }
+            RemoteApp.setControlCut(this, false);
+            cutAt = 0;
+        }
     }
 
     // ───────────────────────── 수동 잠금 (앱·타일) ─────────────────────────

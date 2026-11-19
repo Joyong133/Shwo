@@ -1,6 +1,9 @@
 package kr.shwo.focuslock;
 
 import android.app.Activity;
+import android.app.AlertDialog;
+import android.content.ClipData;
+import android.content.ClipboardManager;
 import android.content.ComponentName;
 import android.content.Intent;
 import android.graphics.Color;
@@ -42,6 +45,8 @@ public class MainActivity extends Activity {
     };
 
     private TextView statusTitle, statusDetail, displayInfo;
+    private TextView remoteTarget, remoteNotif, remoteCut;
+    private Button notifButton;
     private LinearLayout statusCard, permCard;
     private Button lockNow, lockLater, unlock, resumeAuto;
 
@@ -104,6 +109,34 @@ public class MainActivity extends Activity {
                 "앱으로 휴대폰 화면을 PC·VR 헤드셋에 공유(캐스트)할 때",
                 Prefs.AUTO_RECORDING, Prefs.autoRecording(this));
 
+        // ── VR 원격 조작 앱 (Spatial Phone) ──
+        LinearLayout sp = card(col, 0xFFE3F2FD);
+        text(sp, "VR 원격 조작 앱 (Spatial Phone)", 17, true);
+        remoteTarget = text(sp, "", 14, false);
+        LinearLayout spRow = row(sp);
+        button(spRow, "대상 앱 바꾸기", v -> chooseTarget());
+        toggle(sp, "이 앱이 연결되면 자동 잠금",
+                "Spatial Phone 이 휴대폰 화면을 헤드셋으로 보내는 동안(상단에 공유 알림이 떠 있는 동안) 잠급니다. "
+                        + "'알림 접근' 허용이 필요합니다. 알림 내용은 읽지 않습니다.",
+                Prefs.AUTO_TARGET, Prefs.autoTarget(this));
+        remoteNotif = text(sp, "", 13, false);
+        LinearLayout nRow = row(sp);
+        notifButton = button(nRow, "알림 접근 허용하기", v ->
+                startActivity(new Intent("android.settings.ACTION_NOTIFICATION_LISTENER_SETTINGS")));
+        toggle(sp, "잠금 중 이 앱의 조작 기능 완전히 끄기 (고급)",
+                "터치로 들어오는 조작은 이미 막힙니다. 이 옵션은 VR 쪽의 뒤로·홈 버튼, 글자 입력까지 막기 위해 "
+                        + "잠금 중에만 이 앱의 접근성 서비스를 잠시 끄고, 잠금이 풀리면 다시 켭니다. "
+                        + "PC 에서 아래 adb 명령을 한 번 실행해야 동작합니다.",
+                Prefs.CUT_CONTROL, Prefs.cutControl(this));
+        remoteCut = text(sp, "", 13, false);
+        remoteCut.setTextIsSelectable(true);
+        LinearLayout cRow = row(sp);
+        button(cRow, "adb 명령 복사", v -> {
+            ClipboardManager cm = getSystemService(ClipboardManager.class);
+            cm.setPrimaryClip(ClipData.newPlainText("adb", RemoteApp.adbCommand(this)));
+            android.widget.Toast.makeText(this, "복사했습니다", android.widget.Toast.LENGTH_SHORT).show();
+        });
+
         // ── 원격 입력 ──
         LinearLayout remote = card(col, 0xFFF5F5F5);
         text(remote, "원격 조작도 막기", 17, true);
@@ -155,6 +188,7 @@ public class MainActivity extends Activity {
     protected void onResume() {
         super.onResume();
         TouchLockService.addListener(refresher);
+        NotifWatcher.refreshNow();
         handler.post(ticker);
     }
 
@@ -166,6 +200,7 @@ public class MainActivity extends Activity {
     }
 
     private void refresh() {
+        refreshRemote();
         TouchLockService s = TouchLockService.get();
         boolean enabled = s != null || isServiceEnabled();
         permCard.setVisibility(enabled ? View.GONE : View.VISIBLE);
@@ -186,7 +221,9 @@ public class MainActivity extends Activity {
             long rem = s.manualRemainingMs();
             why.append(rem > 0 ? "집중 시간 남음: " + fmt(rem) : "직접 잠금 (끌 때까지)");
         } else if (locked) {
-            why.append(!ext.isEmpty() ? "외부 화면 연결로 자동 잠금" : "화면 공유 감지로 자동 잠금");
+            why.append(!ext.isEmpty() ? "외부 화면 연결로 자동 잠금"
+                    : s.remoteAppActive() ? RemoteApp.targetLabel(this) + " 연결로 자동 잠금"
+                    : "화면 공유 감지로 자동 잠금");
         } else if (s.isAutoSuppressed()) {
             why.append("연결 중이지만 잠금을 풀어 두었습니다");
         } else {
@@ -210,6 +247,37 @@ public class MainActivity extends Activity {
 
         setButtons(!locked, !locked, locked, s.isAutoSuppressed());
         tint(locked ? 0xFFFFEBEE : 0xFFE8F5E9);
+    }
+
+    private void refreshRemote() {
+        String label = RemoteApp.targetLabel(this);
+        boolean auto = Prefs.targetPkg(this).isEmpty();
+        remoteTarget.setText(label == null
+                ? "대상 앱: 찾지 못함 — 휴대폰에 Spatial Phone 앱을 먼저 설치하세요"
+                : "대상 앱: " + label + (auto ? " (자동 선택)" : ""));
+        boolean allowed = NotifWatcher.isAllowed(this);
+        remoteNotif.setText(!allowed ? "알림 접근: 허용 안 됨"
+                : "알림 접근: 허용됨 · 연결 상태: " + (NotifWatcher.isTargetActive() ? "연결 중" : "연결 안 됨"));
+        notifButton.setVisibility(allowed ? View.GONE : View.VISIBLE);
+        boolean can = RemoteApp.canCutControl(this);
+        remoteCut.setText(can
+                ? "권한: 허용됨" + (RemoteApp.isControlCut(this) ? " · 지금 조작 기능 꺼 둠" : "")
+                : "권한: 아직 없음 — PC 에서 휴대폰을 USB 로 연결하고 실행:\n" + RemoteApp.adbCommand(this));
+    }
+
+    private void chooseTarget() {
+        List<RemoteApp.Candidate> list = RemoteApp.candidates(this);
+        String[] names = new String[list.size() + 1];
+        names[0] = "자동 선택 (이름에 Spatial 이 들어간 앱)";
+        for (int i = 0; i < list.size(); i++) names[i + 1] = list.get(i).label;
+        new AlertDialog.Builder(this)
+                .setTitle("VR 원격 조작 앱 선택")
+                .setItems(names, (d, which) -> {
+                    Prefs.putString(this, Prefs.TARGET_PKG, which == 0 ? "" : list.get(which - 1).pkg);
+                    NotifWatcher.refreshNow();
+                    refresh();
+                })
+                .show();
     }
 
     private void setButtons(boolean now, boolean later, boolean off, boolean resume) {
