@@ -502,14 +502,19 @@ public final class MirrorService extends Service {
             }
             if (idx < 0) continue;
             byte[] data = new byte[info.size];
-            ByteBuffer out = c.getOutputBuffer(idx);
-            if (out != null && info.size > 0) {
-                out.position(info.offset);
-                out.get(data, 0, info.size);
-            }
             try {
+                ByteBuffer out = c.getOutputBuffer(idx);
+                if (out != null && info.size > 0) {
+                    out.position(info.offset);
+                    out.get(data, 0, info.size);
+                }
                 c.releaseOutputBuffer(idx, false);
-            } catch (IllegalStateException e) {
+            } catch (RuntimeException e) {
+                // 인코더 오류 → 앱을 멈추지 말고 인코더를 다시 시작
+                if (encoding) {
+                    hub.log("인코더 오류 (" + e.getClass().getSimpleName() + ") → 다시 시작합니다");
+                    main.post(this::restartEncoder);
+                }
                 break;
             }
             if (info.size == 0) continue;

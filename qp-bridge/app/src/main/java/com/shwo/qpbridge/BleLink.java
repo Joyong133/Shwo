@@ -12,6 +12,8 @@ public abstract class BleLink extends Link {
 
     protected final BluetoothAdapter adapter;
     protected volatile int mtu = 23;
+    /** BLE 속성 값 최대 길이 */
+    static final int MAX_ATTR_LEN = 512;
 
     private final ArrayDeque<byte[]> queue = new ArrayDeque<>();
     private final Proto.Reassembler reassembler = new Proto.Reassembler();
@@ -46,7 +48,8 @@ public abstract class BleLink extends Link {
     public boolean send(byte type, byte[] payload) {
         if (state != READY) return false;
         if (payload.length + 1 > Proto.MAX_MESSAGE) return false;
-        List<byte[]> packets = Proto.split(type, payload, mtu - 3);
+        // 한 패킷은 MTU-3 이하이면서 512바이트 이하여야 함 (Android 13+ 는 512 초과 시 예외를 던짐)
+        List<byte[]> packets = Proto.split(type, payload, Math.min(mtu - 3, MAX_ATTR_LEN));
         long size = 0;
         for (byte[] p : packets) size += p.length;
         pending.addAndGet(size);
@@ -70,8 +73,13 @@ public abstract class BleLink extends Link {
         boolean ok;
         try {
             ok = writePacket(p);
-        } catch (SecurityException | IllegalStateException e) {
-            ok = false;
+        } catch (RuntimeException e) {
+            // 어떤 예외든 앱이 멈추지 않게 하고 이 패킷은 버림
+            queue.pollFirst();
+            pending.addAndGet(-p.length);
+            log("블루투스 전송 오류: " + e.getClass().getSimpleName() + " — 패킷을 건너뜁니다");
+            main.post(this::pump);
+            return;
         }
         if (ok) {
             queue.pollFirst();

@@ -51,12 +51,25 @@ public final class Hub implements Link.Callback {
     private volatile String peerName;
     private Link lastActive;
     private boolean bluetoothWanted;
+    private String lastCrash;
 
     private Hub(Context ctx) {
         ble = BuildConfig.IS_VIEWER ? new BleCentralLink(ctx) : new BlePeripheralLink(ctx);
         usb = new UsbLink(ctx);
         ble.setCallback(this);
         usb.setCallback(this);
+        // 앱이 오류로 꺼지면 내용을 저장해 두었다가 다음 연결 때 기록에 보여줌 (문제 찾기용)
+        android.content.SharedPreferences prefs = ctx.getSharedPreferences("qpbridge", Context.MODE_PRIVATE);
+        Thread.UncaughtExceptionHandler prev = Thread.getDefaultUncaughtExceptionHandler();
+        Thread.setDefaultUncaughtExceptionHandler((t, e) -> {
+            java.io.StringWriter sw = new java.io.StringWriter();
+            e.printStackTrace(new java.io.PrintWriter(sw));
+            String trace = sw.toString();
+            prefs.edit().putString("lastCrash", trace.substring(0, Math.min(700, trace.length()))).commit();
+            if (prev != null) prev.uncaughtException(t, e);
+        });
+        lastCrash = prefs.getString("lastCrash", null);
+        prefs.edit().remove("lastCrash").apply();
         // 블루투스를 켜는 데는 시간이 걸리므로, 켜지는 순간 자동으로 시작 / 꺼지면 정리
         ctx.registerReceiver(new BroadcastReceiver() {
             @Override
@@ -170,6 +183,11 @@ public final class Hub implements Link.Callback {
         }
         Link now = active();
         if (now == null) peerName = null;
+        if (now != null && lastCrash != null) {
+            String c = lastCrash;
+            lastCrash = null;
+            main.postDelayed(() -> log("지난번에 앱이 오류로 꺼졌어요: " + c.replace('\n', ' ').replace('\t', ' ')), 500);
+        }
         if (now != lastActive) {
             if (now != null) log(now.label() + " 연결을 사용합니다.");
             else if (lastActive != null) log("연결이 끊어졌어요.");
