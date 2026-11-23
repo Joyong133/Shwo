@@ -28,7 +28,7 @@ public class PhoneActivity extends Activity implements Hub.Listener {
 
     private Hub hub;
     private TextView linkStatus, codeText, a11yStatus, shareStatus, logText;
-    private Button a11yBtn, shareBtn, btBtn;
+    private Button a11yBtn, shareBtn, btBtn, batteryBtn;
     private boolean resumed, wasReady, askedCapture;
     private FileUi fileUi;
 
@@ -44,6 +44,8 @@ public class PhoneActivity extends Activity implements Hub.Listener {
         a11yBtn = findViewById(R.id.a11yBtn);
         shareBtn = findViewById(R.id.shareBtn);
         btBtn = findViewById(R.id.btBtn);
+        batteryBtn = findViewById(R.id.batteryBtn);
+        batteryBtn.setOnClickListener(v -> askBatteryExemption());
 
         hub = Hub.get(this);
         PhoneController.get(this);
@@ -220,6 +222,27 @@ public class PhoneActivity extends Activity implements Hub.Listener {
         }
     }
 
+    // ── 항상 빠르게: 배터리 최적화 예외 ──
+
+    private boolean batteryExempt() {
+        android.os.PowerManager pm = (android.os.PowerManager) getSystemService(POWER_SERVICE);
+        return pm != null && pm.isIgnoringBatteryOptimizations(getPackageName());
+    }
+
+    @android.annotation.SuppressLint("BatteryLife")
+    private void askBatteryExemption() {
+        hub.log("'허용'을 누르면 휴대폰이 이 앱을 잠재우지 않아 연결이 빠르게 유지돼요. "
+                + "삼성: 설정 → 배터리 → 백그라운드 사용 제한 → '절전 예외 앱'에도 추가하면 더 확실해요.");
+        try {
+            startActivity(new Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.parse("package:" + getPackageName())));
+        } catch (Exception e) {
+            try {
+                startActivity(new Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS));
+            } catch (Exception ignored) {
+            }
+        }
+    }
+
     // ── 화면 갱신 ──
 
     private void refresh() {
@@ -231,6 +254,7 @@ public class PhoneActivity extends Activity implements Hub.Listener {
         codeText.setText("연결 코드 " + ble.getCode());
         codeText.setVisibility(waiting ? View.VISIBLE : View.GONE);
         btBtn.setVisibility(ble.getState() == Link.IDLE ? View.VISIBLE : View.GONE);
+        batteryBtn.setVisibility(batteryExempt() ? View.GONE : View.VISIBLE);
 
         boolean a11y = accessibilityEnabled();
         a11yStatus.setText(a11y ? "✓ 켜짐 — 퀘스트에서 터치·뒤로·홈·글자 입력 가능" : "✗ 꺼짐 — 켜야 퀘스트에서 조작할 수 있어요");

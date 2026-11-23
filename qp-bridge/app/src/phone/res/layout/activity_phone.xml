@@ -48,6 +48,13 @@
                 android:textStyle="bold" />
 
             <Button
+                android:id="@+id/batteryBtn"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="⚡ 항상 빠르게 연결 유지 (배터리 제한 해제)"
+                android:textAllCaps="false" />
+
+            <Button
                 android:id="@+id/btBtn"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"

@@ -44,7 +44,8 @@ public final class BleCentralLink extends BleLink {
 
     private static final long SCAN_TIMEOUT_MS = 90_000;
     private static final long CONNECT_TIMEOUT_MS = 20_000;
-    private static final int MAX_RETRIES = 5;
+    /** 같은 주소로 바로 다시 연결해 보는 횟수. 그다음엔 코드로 다시 찾음 (휴대폰 블루투스 주소는 가끔 바뀜) */
+    private static final int DIRECT_RETRIES = 2;
 
     private final SharedPreferences prefs;
     private BluetoothLeScanner scanner;
@@ -60,6 +61,9 @@ public final class BleCentralLink extends BleLink {
     private int retries;
     private BluetoothGattCharacteristic psmChar;
     private int fastPsm, fastAttempts;
+    private volatile boolean fastUp;
+    private final Runnable fastRetry = this::connectFast;
+    private final Runnable rescan = this::start;
 
     public BleCentralLink(Context ctx) {
         super(ctx);
@@ -74,6 +78,10 @@ public final class BleCentralLink extends BleLink {
 
     @Override
     public void start() {
+        startScan(ScanSettings.SCAN_MODE_LOW_LATENCY);
+    }
+
+    private void startScan(int mode) {
         if (scanning || gatt != null) return;
         if (!bluetoothOn()) {
             log("블루투스가 꺼져 있어요. (퀘스트: 설정 → 기기 → 블루투스)");
@@ -88,7 +96,7 @@ public final class BleCentralLink extends BleLink {
         publishPeers();
         List<ScanFilter> filters = Collections.singletonList(
                 new ScanFilter.Builder().setServiceUuid(new ParcelUuid(Proto.SERVICE)).build());
-        ScanSettings settings = new ScanSettings.Builder().setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY).build();
+        ScanSettings settings = new ScanSettings.Builder().setScanMode(mode).build();
         try {
             scanner.startScan(filters, settings, scanCallback);
         } catch (SecurityException | IllegalStateException e) {
@@ -99,18 +107,40 @@ public final class BleCentralLink extends BleLink {
         userStopped = false;
         setState(WAITING, "블루투스로 휴대폰을 찾는 중…");
         main.removeCallbacks(scanTimeout);
-        main.postDelayed(scanTimeout, SCAN_TIMEOUT_MS);
+        if (mode == ScanSettings.SCAN_MODE_LOW_LATENCY) main.postDelayed(scanTimeout, SCAN_TIMEOUT_MS);
+        // 처음 쓰는 경우: 4초 동안 휴대폰이 딱 하나만 보이면 그걸로 바로 연결
+        main.removeCallbacks(autoPick);
+        if (prefs.getString("lastCode", null) == null) main.postDelayed(autoPick, 4000);
     }
 
-    private final Runnable scanTimeout = () -> {
+    private final Runnable autoPick = this::pickOnlyPhone;
+
+    private void pickOnlyPhone() {
+        if (!scanning || peers.size() != 1) return;
+        Peer only = peers.values().iterator().next();
+        if (only.code == null) return;
+        log("근처에 휴대폰이 하나(코드 " + only.code + ")뿐이라 바로 연결합니다.");
+        connect(only);
+    }
+
+    private final Runnable scanTimeout = this::onScanTimeout;
+
+    private void onScanTimeout() {
         if (!scanning) return;
         stopScan();
+        if (prefs.getString("lastCode", null) != null && !userStopped && bluetoothOn()) {
+            // 연결했던 휴대폰이 있으면 포기하지 않고 계속 찾음 (배터리를 덜 쓰는 모드로)
+            setState(WAITING, "휴대폰을 계속 찾는 중… (휴대폰 앱을 켜 두세요)");
+            startScan(ScanSettings.SCAN_MODE_BALANCED); // 이번엔 시간 제한 없음
+            return;
+        }
         if (peers.isEmpty()) log("휴대폰을 찾지 못했어요. 휴대폰 앱이 켜져 있고 블루투스가 켜져 있는지 확인하세요.");
         setState(IDLE, "블루투스 검색 멈춤");
-    };
+    }
 
     private void stopScan() {
         main.removeCallbacks(scanTimeout);
+        main.removeCallbacks(autoPick);
         if (!scanning) return;
         scanning = false;
         peers.clear();
@@ -184,7 +214,7 @@ public final class BleCentralLink extends BleLink {
         if (target == null) return;
         closeGatt();
         discoveryStarted = false;
-        setState(CONNECTING, "블루투스 연결 중…" + (retries > 0 ? " (재시도 " + retries + "/" + MAX_RETRIES + ")" : ""));
+        setState(CONNECTING, "블루투스 연결 중…" + (retries > 0 ? " (재시도 " + retries + ")" : ""));
         try {
             gatt = target.connectGatt(ctx, false, gattCallback, BluetoothDevice.TRANSPORT_LE,
                     BluetoothDevice.PHY_LE_1M_MASK | BluetoothDevice.PHY_LE_2M_MASK);
@@ -337,6 +367,7 @@ public final class BleCentralLink extends BleLink {
         setState(READY, "블루투스로 연결됨");
         fastPsm = psm;
         fastAttempts = 0;
+        fastUp = false;
         if (psm > 0) connectFast();
     }
 
@@ -344,8 +375,9 @@ public final class BleCentralLink extends BleLink {
     public void connectFast() {
         BluetoothDevice dev = target;
         int psm = fastPsm;
-        if (dev == null || psm <= 0 || state != READY || Build.VERSION.SDK_INT < 29 || fastAttempts >= 3) return;
-        fastAttempts++;
+        main.removeCallbacks(fastRetry);
+        if (dev == null || psm <= 0 || state != READY || Build.VERSION.SDK_INT < 29 || fastUp) return;
+        int attempt = ++fastAttempts;
         new Thread(() -> {
             BluetoothSocket s = null;
             try {
@@ -356,9 +388,28 @@ public final class BleCentralLink extends BleLink {
                 if (s != null) {
                     try { s.close(); } catch (Exception ignored) {}
                 }
-                log("블루투스 고속 채널 연결 실패 (" + e.getClass().getSimpleName() + "). 일반 블루투스로 계속합니다.");
+                if (attempt == 1 || attempt % 5 == 0)
+                    log("블루투스 고속 채널 연결 실패 (" + e.getClass().getSimpleName() + "). 일반 블루투스로 계속하면서 다시 시도합니다.");
+                // 2, 4, 8, 16, 30초… 간격으로 계속 다시 시도
+                long delay = Math.min(30_000L, 2000L << Math.min(attempt - 1, 4));
+                main.post(() -> {
+                    if (state == READY && !fastUp) main.postDelayed(fastRetry, delay);
+                });
             }
         }, "l2cap-connect").start();
+    }
+
+    /** Hub 가 고속 채널 상태를 알려 줌 */
+    public void onFastReady() {
+        fastUp = true;
+        fastAttempts = 0;
+        main.removeCallbacks(fastRetry);
+    }
+
+    public void onFastClosed() {
+        fastUp = false;
+        main.removeCallbacks(fastRetry);
+        if (state == READY) main.postDelayed(fastRetry, 2000);
     }
 
     private void discover(BluetoothGatt g) {
@@ -390,19 +441,25 @@ public final class BleCentralLink extends BleLink {
             setState(IDLE, "블루투스 끊김");
             return;
         }
-        if (wasReady) log("블루투스 연결이 끊어졌어요 (" + gattStatus(status) + ")");
-        if (retries < MAX_RETRIES && bluetoothOn()) {
-            retries++;
-            setState(CONNECTING, "블루투스 다시 연결 중… (" + retries + "/" + MAX_RETRIES + ")");
-            main.postDelayed(this::doConnect, 1500);
-        } else {
-            log("블루투스로 연결하지 못했어요 (" + gattStatus(status) + "). 두 기기를 가까이 두고 다시 시도하세요.");
+        if (wasReady) log("블루투스 연결이 끊어졌어요 (" + gattStatus(status) + "). 바로 다시 연결합니다.");
+        if (!bluetoothOn()) {
             target = null;
-            setState(IDLE, "블루투스 연결 실패");
+            setState(IDLE, "블루투스 꺼짐");
+        } else if (retries < DIRECT_RETRIES) {
+            retries++;
+            setState(CONNECTING, "블루투스 다시 연결 중… (" + retries + ")");
+            main.postDelayed(this::doConnect, 1000);
+        } else {
+            // 주소가 바뀌었을 수 있으니 코드로 다시 찾아서 자동 연결 (포기하지 않음)
+            target = null;
+            setState(IDLE, "다시 찾는 중");
+            main.postDelayed(rescan, 500);
         }
     }
 
     private void closeGatt() {
+        main.removeCallbacks(fastRetry);
+        fastUp = false;
         if (gatt != null) {
             try {
                 gatt.disconnect();
@@ -429,6 +486,7 @@ public final class BleCentralLink extends BleLink {
     @Override
     public void disconnect() {
         userStopped = true;
+        main.removeCallbacks(rescan);
         target = null;
         prefs.edit().remove("lastCode").apply();
         main.removeCallbacks(connectTimeout);
@@ -441,6 +499,7 @@ public final class BleCentralLink extends BleLink {
     public void stop() {
         stopScan();
         userStopped = true;
+        main.removeCallbacks(rescan);
         target = null;
         main.removeCallbacks(connectTimeout);
         closeGatt();

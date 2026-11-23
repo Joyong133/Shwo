@@ -195,9 +195,10 @@ public final class Hub implements Link.Callback {
     public void onLinkState(Link link) {
         // 일반 블루투스가 끊기면 고속 채널도 닫음
         if (link == ble && ble.getState() != Link.READY && fast.isOpen()) fast.disconnect();
-        // 퀘스트: 고속 채널만 끊기고 블루투스는 살아 있으면 잠시 후 다시 시도
-        if (link == fast && fast.getState() != Link.READY && ble.getState() == Link.READY && ble instanceof BleCentralLink) {
-            main.postDelayed(((BleCentralLink) ble)::connectFast, 3000);
+        // 퀘스트: 고속 채널 상태를 블루투스 쪽에 알려서, 끊기면 계속 다시 시도하게 함
+        if (link == fast && ble instanceof BleCentralLink) {
+            if (fast.getState() == Link.READY) ((BleCentralLink) ble).onFastReady();
+            else ((BleCentralLink) ble).onFastClosed();
         }
         if (link.getState() == Link.READY) {
             link.send(Proto.HELLO, Proto.utf8(Link.deviceName()));

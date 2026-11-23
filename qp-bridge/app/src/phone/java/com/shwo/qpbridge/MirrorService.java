@@ -211,14 +211,14 @@ public final class MirrorService extends Service {
         if (audio != null) audio.setLinkKind(kind);
         if (kind == linkKind && codec != null) return;
         linkKind = kind;
-        restartEncoder();
+        scheduleRestart();
     }
 
     void setQuality(int level) {
         level = Math.max(0, Math.min(2, level));
         if (prefs.getInt("quality", 1) == level) return;
         prefs.edit().putInt("quality", level).apply();
-        restartEncoder();
+        scheduleRestart();
     }
 
     void setAudioEnabled(boolean on) {
@@ -228,7 +228,18 @@ public final class MirrorService extends Service {
 
     /** 퀘스트가 H.265 를 풀 수 있는지 알려 옴 → 지원하면 H.265 로 다시 시작 (같은 비트레이트에서 더 선명) */
     void onPeerCapsChanged() {
-        restartEncoder();
+        scheduleRestart();
+    }
+
+    /**
+     * 연결 직후에는 연결 종류(블루투스→고속), H.265 지원, 화질 설정이 잇달아 도착함.
+     * 매번 인코더를 다시 켜면 첫 화면이 늦어지니 잠깐 모았다가 한 번만 다시 시작.
+     */
+    private final Runnable restartTask = this::restartEncoder;
+
+    private void scheduleRestart() {
+        main.removeCallbacks(restartTask);
+        main.postDelayed(restartTask, 350);
     }
 
     /** 퀘스트가 키프레임을 요청 (메인 스레드) */
@@ -251,7 +262,7 @@ public final class MirrorService extends Service {
         public void onDisplayChanged(int displayId) {
             if (displayId != Display.DEFAULT_DISPLAY || codec == null) return;
             Point p = realSize();
-            if (p.x != captureFor.x || p.y != captureFor.y) restartEncoder(); // 화면 회전
+            if (p.x != captureFor.x || p.y != captureFor.y) scheduleRestart(); // 화면 회전
         }
     };
 
@@ -290,6 +301,7 @@ public final class MirrorService extends Service {
     }
 
     private void restartEncoder() {
+        main.removeCallbacks(restartTask);
         stopCodec();
         if (projection == null || !hub.isReady()) return;
         int kind = hub.kind();
@@ -319,8 +331,8 @@ public final class MirrorService extends Service {
                 int[] size = fit(real.x, real.y, profile[0]);
                 w = size[0];
                 h = size[1];
-                for (boolean tuned : new boolean[]{true, false}) {
-                    c = createEncoder(name, mime, w, h, profile[1], profile[2], usb, tuned);
+                for (int tier = 2; tier >= 0; tier--) { // 2 저지연+조정, 1 조정, 0 기본
+                    c = createEncoder(name, mime, w, h, profile[1], profile[2], usb, tier);
                     if (c != null) {
                         chosen = name;
                         chosenMime = mime;
@@ -455,7 +467,7 @@ public final class MirrorService extends Service {
         return new int[]{w, h};
     }
 
-    private MediaCodec createEncoder(String name, String mime, int w, int h, int bitrate, int fps, boolean usb, boolean tuned) {
+    private MediaCodec createEncoder(String name, String mime, int w, int h, int bitrate, int fps, boolean usb, int tier) {
         MediaCodec c = null;
         try {
             c = MediaCodec.createByCodecName(name);
@@ -470,12 +482,15 @@ public final class MirrorService extends Service {
             f.setInteger(MediaFormat.KEY_FRAME_RATE, fps);
             f.setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, usb ? 2 : 10);
             f.setLong(MediaFormat.KEY_REPEAT_PREVIOUS_FRAME_AFTER, usb ? 500_000 : 1_000_000);
-            if (tuned) {
+            if (tier >= 1) {
                 f.setInteger(MediaFormat.KEY_PRIORITY, 0);
                 if (Build.VERSION.SDK_INT >= 29) {
                     f.setFloat(MediaFormat.KEY_MAX_FPS_TO_ENCODER, fps);
                     f.setInteger(MediaFormat.KEY_MAX_B_FRAMES, 0);
+                    // 키프레임마다 SPS/PPS 를 붙여서, 데이터가 빠져도 다음 키프레임에서 바로 복구
+                    if (tier >= 2) f.setInteger(MediaFormat.KEY_PREPEND_HEADER_TO_SYNC_FRAMES, 1);
                 }
+                if (tier >= 2 && Build.VERSION.SDK_INT >= 30) f.setInteger(MediaFormat.KEY_LATENCY, 1); // 프레임을 모아 두지 말고 바로 내보내기
                 if (MediaFormat.MIMETYPE_VIDEO_AVC.equals(mime)) {
                     // H.264 High 프로필: Baseline 보다 같은 데이터량에서 더 선명
                     int bestLevel = 0;
