@@ -227,12 +227,16 @@ main { padding: 10px 12px calc(96px + var(--safe-bot)); max-width: 1100px; margi
 .disclaimer { color: var(--muted); font-size: 11px; text-align: center; margin-top: 10px; }
 
 /* ───── 카드 뽑기 ───── */
-.fab {
+.fabs {
   position: fixed; z-index: 20; right: 16px; bottom: calc(18px + var(--safe-bot));
-  height: 52px; padding: 0 22px; border-radius: 26px; border: none; font-weight: 800; font-size: 15px;
+  display: flex; gap: 8px; align-items: center;
+}
+.fab {
+  height: 52px; padding: 0 20px; border-radius: 26px; border: none; font-weight: 800; font-size: 15px;
   color: #1a1406; background: linear-gradient(135deg, var(--accent2), var(--accent));
   box-shadow: 0 8px 24px rgba(201, 162, 74, .45);
 }
+.fab-sub { height: 44px; padding: 0 16px; font-size: 14px; color: var(--text); background: rgba(23, 28, 43, .95); border: 1px solid var(--accent); box-shadow: 0 6px 18px rgba(0, 0, 0, .5); }
 .pack {
   position: fixed; inset: 0; z-index: 40; background: rgba(4, 5, 9, .94);
   display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px; padding: 16px;
@@ -255,6 +259,37 @@ main { padding: 10px 12px calc(96px + var(--safe-bot)); max-width: 1100px; margi
 }
 .flip.open .flip-back { animation: flipOut .3s ease-in forwards; }
 @keyframes wobble { 0%, 100% { transform: rotate(-1.5deg); } 50% { transform: rotate(1.5deg); } }
+.tb-legend { border-color: #ffd45a; box-shadow: 0 0 40px rgba(255, 212, 90, .6); }
+.tb-icon { border-color: #ff9ed0; box-shadow: 0 0 46px rgba(255, 140, 210, .7); }
+/* 10연뽑 */
+.pack.ten { justify-content: safe center; padding-top: calc(20px + var(--safe-top)); overflow-y: auto; }
+.pack.ten .pack-stage { width: 100%; max-width: 640px; }
+.ten-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; width: 100%; }
+@media (max-width: 420px) { .ten-grid { gap: 6px; } }
+.flip.mini { width: 100%; animation: dealIn .35s ease both; }
+@keyframes dealIn { from { opacity: 0; transform: translateY(18px) scale(.9); } to { opacity: 1; transform: none; } }
+.flip.mini .flip-back { border-radius: 10px; border-width: 2px; gap: 2px; animation: none; }
+.flip.mini.open .flip-back { animation: flipOut .22s ease-in forwards; }
+.flip.mini.open .flip-front { animation: flipIn .25s ease-out .22s forwards; }
+.flip.mini .cb-logo { font-size: 15px; letter-spacing: 1px; }
+.flip.mini .cb-sub { display: none; }
+.flip.mini .card { width: 100%; border-radius: 10px; padding: 2px; }
+.flip.mini .card-inner { border-radius: 8px; }
+.mcard .card-inner { align-items: center; }
+.m-ovr { position: absolute; z-index: 2; left: 7%; top: 5%; display: flex; flex-direction: column; align-items: center; line-height: 1; }
+.m-ovr b { font-size: 26cqw; font-weight: 900; text-shadow: 0 2px 6px rgba(0, 0, 0, .7); }
+.m-ovr span { font-size: 12cqw; font-weight: 800; opacity: .9; }
+.m-art { flex: 1; min-height: 0; width: 100%; display: flex; align-items: flex-end; justify-content: center; padding-top: 18%; }
+.m-art .photo { height: 100%; max-width: 100%; }
+.m-art .photo.opaque { height: 78%; }
+.m-art .avatar { width: 70%; }
+.m-name { width: 100%; text-align: center; font-size: 15cqw; font-weight: 900; padding: 4% 4% 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; background: linear-gradient(180deg, transparent, rgba(5, 6, 10, .9) 35%); }
+.m-stars { width: 100%; text-align: center; padding: 1% 0 8%; background: rgba(5, 6, 10, .9); }
+.m-stars .stars { font-size: 12cqw; gap: 0; }
+.flip.mini.open { cursor: pointer; }
+.flip.mini.best.open { filter: drop-shadow(0 0 10px rgba(255, 212, 90, .75)); }
+.ten-summary { margin: 4px 0 0; font-weight: 900; font-size: 15px; text-align: center; }
+.ten-hint { margin: 0; font-size: 12px; color: var(--muted); text-align: center; }
 .cb-logo { font-size: 46px; font-weight: 900; color: var(--accent2); letter-spacing: 2px; }
 .cb-sub { font-size: 12px; letter-spacing: 4px; color: var(--muted); }
 .pack-result { margin: 0; font-weight: 900; font-size: 18px; letter-spacing: 1px; opacity: 0; animation: fadeIn .4s ease 1.4s forwards; }
@@ -263,7 +298,7 @@ main { padding: 10px 12px calc(96px + var(--safe-bot)); max-width: 1100px; margi
 .tier-text-rare { color: #60a5fa; } .tier-text-common { color: #c7ccd8; }
 .pack-actions { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
 .pack-actions button, .modal-box button {
-  height: 44px; padding: 0 18px; border-radius: 12px; border: 1px solid var(--line); background: var(--bg2); font-weight: 700;
+  height: 44px; padding: 0 14px; border-radius: 12px; border: 1px solid var(--line); background: var(--bg2); font-weight: 700;
 }
 button.primary { background: linear-gradient(135deg, var(--accent2), var(--accent)); color: #1a1406; border-color: transparent; }
 button.wide { width: 100%; margin-top: 14px; }

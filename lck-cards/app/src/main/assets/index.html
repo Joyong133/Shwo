@@ -59,7 +59,10 @@
   <p class="empty" id="empty" hidden>조건에 맞는 선수가 없습니다.</p>
 </main>
 
-<button class="fab" id="packBtn">카드 뽑기</button>
+<div class="fabs">
+  <button class="fab fab-sub" id="packBtn">1회 뽑기</button>
+  <button class="fab" id="pack10Btn">10연뽑</button>
+</div>
 
 <!-- 상세 -->
 <div class="detail" id="detail" hidden>
@@ -77,10 +80,16 @@
 <!-- 카드 뽑기 -->
 <div class="pack" id="pack" hidden>
   <div class="pack-stage" id="packStage"></div>
-  <div class="pack-actions">
+  <div class="pack-actions" id="packActions1">
     <button id="packAgain">한 장 더</button>
+    <button id="packTo10">10연뽑</button>
     <button id="packView" class="primary">자세히 보기</button>
     <button id="packClose">닫기</button>
+  </div>
+  <div class="pack-actions" id="packActions10" hidden>
+    <button id="pack10Skip">모두 공개</button>
+    <button id="pack10Again" class="primary" hidden>10연뽑 다시</button>
+    <button id="pack10Close">닫기</button>
   </div>
 </div>
 

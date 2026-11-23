@@ -300,22 +300,103 @@
   }
 
   // ───── 카드 뽑기 ─────
-  let packPick = null;
-  function openPack() {
-    // 높은 등급일수록 조금 덜 나오게 (가중치)
-    const weight = { icon: 1, legend: 2, epic: 4, rare: 6, common: 7 };
-    const total = players.reduce((a, p) => a + weight[p.tier.key], 0);
+  // 높은 등급일수록 덜 나오게 (가중치)
+  const PULL_WEIGHT = { icon: 1, legend: 2, epic: 4, rare: 6, common: 7 };
+  const TIER_ORDER = ['icon', 'legend', 'epic', 'rare', 'common'];
+  function drawOne(pool = players, exclude = new Set()) {
+    const cand = pool.filter((p) => !exclude.has(p.id));
+    const total = cand.reduce((a, p) => a + PULL_WEIGHT[p.tier.key], 0);
     let r = Math.random() * total;
-    packPick = players.find((p) => (r -= weight[p.tier.key]) < 0) || players[0];
-    $('#packStage').innerHTML = `<div class="flip">
-        <div class="flip-back"><div class="cb-logo">LoL</div><div class="cb-sub">PLAYER CARD</div></div>
-        <div class="flip-front">${cardHtml(packPick, true)}</div>
-      </div><p class="pack-result tier-text-${packPick.tier.key}">${packPick.tier.label} · ${packPick.stars}성</p>`;
+    return cand.find((p) => (r -= PULL_WEIGHT[p.tier.key]) < 0) || cand[cand.length - 1];
+  }
+  // 10연뽑용 작은 카드: 사진 · 종합 · 이름 · 별만
+  function miniCardHtml(p) {
+    const t = team(p);
+    const art = p.img
+      ? `<img class="photo${p.opaque ? ' opaque' : ''}" src="${p.img}" alt="" decoding="async">`
+      : avatar(p);
+    return `<article class="card mcard tier-${p.tier.key}" style="--tc:${t.color};--tc2:${t.color2}">
+      <div class="card-inner">
+        <div class="shine"></div>
+        <div class="m-ovr"><b>${p.ovr}</b><span>${p.pos}</span></div>
+        <div class="m-art">${art}</div>
+        <div class="m-name">${esc(p.ign)}</div>
+        <div class="m-stars">${starsHtml(p.stars)}</div>
+      </div>
+    </article>`;
+  }
+  const cardBack = (p) => `<div class="flip-back tb-${p.tier.key}"><div class="cb-logo">LoL</div><div class="cb-sub">PLAYER CARD</div></div>`;
+
+  let packPick = null;
+  function showPack(mode) {
+    $('#packActions1').hidden = mode !== 1;
+    $('#packActions10').hidden = mode !== 10;
+    $('#pack').classList.toggle('ten', mode === 10);
     $('#pack').hidden = false;
     document.body.classList.add('locked');
+  }
+  function openPack() {
+    stopReveal();
+    packPick = drawOne();
+    $('#packStage').innerHTML = `<div class="flip">
+        ${cardBack(packPick)}
+        <div class="flip-front">${cardHtml(packPick, true)}</div>
+      </div><p class="pack-result tier-text-${packPick.tier.key}">${packPick.tier.label} · ${packPick.stars}성</p>`;
+    showPack(1);
     requestAnimationFrame(() => setTimeout(() => $('#packStage .flip').classList.add('open'), 700));
   }
-  function closePack() { $('#pack').hidden = true; if (!current) document.body.classList.remove('locked'); }
+
+  // 10연뽑: 같은 선수는 한 번만, EPIC 이상 1장 확정
+  let revealTimer = null, revealStart = null, revealRun = 0;
+  function stopReveal() {
+    revealRun++;
+    clearInterval(revealTimer); clearTimeout(revealStart);
+    revealTimer = revealStart = null;
+  }
+  function openPack10() {
+    stopReveal();
+    const got = new Set();
+    const picks = [];
+    for (let i = 0; i < 10; i++) { const p = drawOne(players, got); got.add(p.id); picks.push(p); }
+    const good = (p) => ['icon', 'legend', 'epic'].includes(p.tier.key);
+    if (!picks.some(good)) {
+      const p = drawOne(players.filter(good), got);
+      picks[Math.floor(Math.random() * 10)] = p;
+    }
+    const best = Math.min(...picks.map((p) => TIER_ORDER.indexOf(p.tier.key)));
+    const counts = TIER_ORDER.map((t) => [t, picks.filter((p) => p.tier.key === t).length]).filter(([, n]) => n);
+    const label = { icon: 'ICON', legend: 'LEGEND', epic: 'EPIC', rare: 'RARE', common: 'NORMAL' };
+    $('#packStage').innerHTML = `<div class="ten-grid">${picks.map((p, i) => `
+        <div class="flip mini${TIER_ORDER.indexOf(p.tier.key) === best && best <= 2 ? ' best' : ''}" data-id="${p.id}" style="animation-delay:${i * 40}ms">
+          ${cardBack(p)}<div class="flip-front">${miniCardHtml(p)}</div>
+        </div>`).join('')}</div>
+      <p class="ten-summary" hidden>${counts.map(([t, n]) => `<span class="tier-text-${t}">${label[t]} ${n}</span>`).join(' · ')}</p>
+      <p class="ten-hint" hidden>카드를 누르면 자세히 볼 수 있어요</p>`;
+    $('#pack10Skip').hidden = false;
+    $('#pack10Again').hidden = true;
+    showPack(10);
+    const flips = [...$('#packStage').querySelectorAll('.flip')];
+    const run = revealRun;
+    let i = 0;
+    const done = () => {
+      if (run !== revealRun) return;
+      clearInterval(revealTimer); revealTimer = null;
+      $('#packStage .ten-summary').hidden = false;
+      $('#packStage .ten-hint').hidden = false;
+      $('#pack10Skip').hidden = true;
+      $('#pack10Again').hidden = false;
+    };
+    revealStart = setTimeout(() => {
+      if (run !== revealRun) return;
+      revealTimer = setInterval(() => {
+        if (i < flips.length) flips[i++].classList.add('open');
+        else done();
+      }, 260);
+    }, 600);
+    $('#pack10Skip').onclick = () => { flips.forEach((f) => f.classList.add('open')); i = flips.length; done(); };
+  }
+
+  function closePack() { stopReveal(); $('#pack').hidden = true; if (!current) document.body.classList.remove('locked'); }
 
   // ───── 기준표 ─────
   function buildInfo() {
@@ -396,6 +477,16 @@
     $('#packAgain').addEventListener('click', openPack);
     $('#packClose').addEventListener('click', closePack);
     $('#packView').addEventListener('click', () => { closePack(); if (packPick) openDetail(packPick.id); });
+    $('#pack10Btn').addEventListener('click', openPack10);
+    $('#packTo10').addEventListener('click', openPack10);
+    $('#pack10Again').addEventListener('click', openPack10);
+    $('#pack10Close').addEventListener('click', closePack);
+    $('#packStage').addEventListener('click', (e) => {
+      const f = e.target.closest('.flip.mini.open');
+      if (!f) return;
+      closePack();
+      openDetail(f.dataset.id);
+    });
 
     $('#infoBtn').addEventListener('click', () => { $('#info').hidden = false; });
     $('#closeInfo').addEventListener('click', () => { $('#info').hidden = true; });
