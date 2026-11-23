@@ -24,9 +24,9 @@ import java.util.Arrays;
 import java.util.Locale;
 import java.util.Random;
 
-/** 기다리는 쪽(기본: 휴대폰). BLE 광고 + GATT 서버. */
+/** 휴대폰 쪽 블루투스: 광고 + GATT 서버. 화면 데이터는 Notify 로 보냄. */
 @SuppressLint("MissingPermission")
-public final class PeripheralLink extends BaseLink {
+public final class BlePeripheralLink extends BleLink {
 
     private BluetoothLeAdvertiser advertiser;
     private BluetoothGattServer server;
@@ -37,7 +37,7 @@ public final class PeripheralLink extends BaseLink {
     private boolean advertising;
     private final String code;
 
-    public PeripheralLink(Context ctx) {
+    public BlePeripheralLink(Context ctx) {
         super(ctx);
         SharedPreferences prefs = this.ctx.getSharedPreferences("qpbridge", Context.MODE_PRIVATE);
         String c = prefs.getString("code", null);
@@ -53,11 +53,6 @@ public final class PeripheralLink extends BaseLink {
     }
 
     @Override
-    public boolean isCentral() {
-        return false;
-    }
-
-    @Override
     public void start() {
         if (running) return;
         if (!bluetoothOn()) {
@@ -66,17 +61,16 @@ public final class PeripheralLink extends BaseLink {
         }
         advertiser = adapter.getBluetoothLeAdvertiser();
         if (advertiser == null) {
-            log("이 기기는 BLE 광고(기다리는 쪽)를 지원하지 않아요. 양쪽 모두 '역할 바꾸기'를 눌러 보세요.");
+            log("이 휴대폰은 블루투스 광고를 지원하지 않아요. USB 케이블로 연결하세요.");
             return;
         }
         BluetoothManager bm = (BluetoothManager) ctx.getSystemService(Context.BLUETOOTH_SERVICE);
         server = bm.openGattServer(ctx, serverCallback);
         if (server == null) {
-            log("GATT 서버를 열 수 없어요. 블루투스를 껐다 켠 뒤 다시 시도하세요.");
+            log("블루투스 서버를 열 수 없어요. 블루투스를 껐다 켠 뒤 다시 시도하세요.");
             return;
         }
         running = true;
-
         BluetoothGattService svc = new BluetoothGattService(Proto.SERVICE, BluetoothGattService.SERVICE_TYPE_PRIMARY);
         BluetoothGattCharacteristic rx = new BluetoothGattCharacteristic(Proto.RX,
                 BluetoothGattCharacteristic.PROPERTY_WRITE | BluetoothGattCharacteristic.PROPERTY_WRITE_NO_RESPONSE,
@@ -88,12 +82,15 @@ public final class PeripheralLink extends BaseLink {
                 BluetoothGattDescriptor.PERMISSION_READ | BluetoothGattDescriptor.PERMISSION_WRITE));
         svc.addCharacteristic(rx);
         svc.addCharacteristic(txChar);
-        setState(WAITING, "준비 중…");
+        setState(WAITING, "블루투스 준비 중…");
         if (!server.addService(svc)) {
-            log("서비스 등록 실패");
+            log("블루투스 서비스 등록 실패");
             stop();
         }
-        // 광고는 onServiceAdded 에서 시작
+    }
+
+    private String waitingText() {
+        return "퀘스트를 기다리는 중 · 코드 " + code;
     }
 
     private void startAdvertising() {
@@ -117,7 +114,7 @@ public final class PeripheralLink extends BaseLink {
             advertiser.startAdvertising(settings, data, scanResponse, advertiseCallback);
             advertising = true;
         } catch (SecurityException | IllegalStateException e) {
-            log("광고 시작 실패: " + e.getMessage());
+            log("블루투스 광고 시작 실패: " + e.getMessage());
         }
     }
 
@@ -134,8 +131,7 @@ public final class PeripheralLink extends BaseLink {
         @Override
         public void onStartSuccess(AdvertiseSettings settingsInEffect) {
             main.post(() -> {
-                if (running && central == null)
-                    setState(WAITING, "연결을 기다리는 중 · 코드 " + code);
+                if (running && central == null) setState(WAITING, waitingText());
             });
         }
 
@@ -143,15 +139,18 @@ public final class PeripheralLink extends BaseLink {
         public void onStartFailure(int errorCode) {
             main.post(() -> {
                 advertising = false;
+                if (errorCode == ADVERTISE_FAILED_ALREADY_STARTED) {
+                    advertising = true;
+                    return;
+                }
                 String why;
                 switch (errorCode) {
                     case ADVERTISE_FAILED_DATA_TOO_LARGE: why = "광고 데이터가 너무 큼"; break;
                     case ADVERTISE_FAILED_TOO_MANY_ADVERTISERS: why = "다른 앱이 광고 슬롯을 모두 사용 중"; break;
-                    case ADVERTISE_FAILED_ALREADY_STARTED: advertising = true; return;
-                    case ADVERTISE_FAILED_FEATURE_UNSUPPORTED: why = "이 기기는 BLE 광고를 지원하지 않음 → '역할 바꾸기'를 시도하세요"; break;
+                    case ADVERTISE_FAILED_FEATURE_UNSUPPORTED: why = "이 휴대폰은 블루투스 광고를 지원하지 않음 → USB 케이블을 쓰세요"; break;
                     default: why = "내부 오류 " + errorCode;
                 }
-                log("광고 실패: " + why);
+                log("블루투스 광고 실패: " + why);
                 stop();
             });
         }
@@ -163,7 +162,7 @@ public final class PeripheralLink extends BaseLink {
             main.post(() -> {
                 if (status == BluetoothGatt.GATT_SUCCESS) startAdvertising();
                 else {
-                    log("서비스 등록 실패: " + gattStatus(status));
+                    log("블루투스 서비스 등록 실패: " + gattStatus(status));
                     stop();
                 }
             });
@@ -175,20 +174,19 @@ public final class PeripheralLink extends BaseLink {
                 if (!running) return;
                 if (newState == BluetoothProfile.STATE_CONNECTED) {
                     if (central != null && !central.equals(device)) {
-                        // 한 번에 한 대만
                         try { server.cancelConnection(device); } catch (SecurityException ignored) {}
                         return;
                     }
                     central = device;
                     subscribed = false;
                     stopAdvertising();
-                    setState(CONNECTING, "연결됨 · 준비 중…");
+                    setState(CONNECTING, "블루투스 연결됨 · 준비 중…");
                 } else if (newState == BluetoothProfile.STATE_DISCONNECTED && device.equals(central)) {
                     central = null;
                     subscribed = false;
                     resetTransfer();
-                    log("연결이 끊어졌어요 (" + gattStatus(status) + ")");
-                    setState(WAITING, "연결을 기다리는 중 · 코드 " + code);
+                    log("블루투스 연결이 끊어졌어요 (" + gattStatus(status) + ")");
+                    setState(WAITING, waitingText());
                     startAdvertising();
                 }
             });
@@ -196,7 +194,7 @@ public final class PeripheralLink extends BaseLink {
 
         @Override
         public void onMtuChanged(BluetoothDevice device, int newMtu) {
-            main.post(() -> mtu = newMtu);
+            mtu = newMtu;
         }
 
         @Override
@@ -228,10 +226,9 @@ public final class PeripheralLink extends BaseLink {
                     } catch (SecurityException ignored) {}
                 }
                 if (!Proto.CCCD.equals(descriptor.getUuid()) || !device.equals(central)) return;
-                boolean on = Arrays.equals(copy, BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE)
+                subscribed = Arrays.equals(copy, BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE)
                         || Arrays.equals(copy, BluetoothGattDescriptor.ENABLE_INDICATION_VALUE);
-                subscribed = on;
-                if (on) setState(READY, "연결 완료");
+                if (subscribed && state != READY) setState(READY, "블루투스로 연결됨");
             });
         }
 
@@ -259,7 +256,7 @@ public final class PeripheralLink extends BaseLink {
 
         @Override
         public void onNotificationSent(BluetoothDevice device, int status) {
-            main.post(PeripheralLink.this::onPacketSent);
+            main.post(BlePeripheralLink.this::onPacketSent);
         }
     };
 
@@ -295,6 +292,6 @@ public final class PeripheralLink extends BaseLink {
         central = null;
         subscribed = false;
         resetTransfer();
-        setState(IDLE, "멈춤");
+        setState(IDLE, "블루투스 꺼짐");
     }
 }

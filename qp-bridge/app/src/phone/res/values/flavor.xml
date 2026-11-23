@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">QP브릿지 폰</string>
+    <string name="a11y_label">QP브릿지 원격 조작</string>
+    <string name="a11y_description">메타퀘스트에서 보낸 터치, 뒤로/홈 버튼, 글자 입력을 이 휴대폰에서 실행합니다. 화면 내용을 수집하거나 다른 곳으로 보내지 않으며, 연결된 퀘스트의 조작만 처리합니다.</string>
     <color name="icon_bg">#11906A</color>
 </resources>

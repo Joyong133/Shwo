@@ -1,0 +1,119 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/bg"
+    android:fitsSystemWindows="true">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="16dp">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/app_name"
+            android:textColor="@color/text"
+            android:textSize="22sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="2dp"
+            android:text="이 휴대폰 화면을 메타퀘스트에 띄우고, 퀘스트에서 조작합니다. Wi-Fi가 없어도 됩니다."
+            android:textColor="@color/muted"
+            android:textSize="13sp" />
+
+        <!-- 1. 연결 -->
+        <LinearLayout style="@style/Card">
+
+            <TextView style="@style/CardTitle" android:text="1. 퀘스트와 연결" />
+
+            <TextView
+                android:id="@+id/linkStatus"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:textSize="16sp" />
+
+            <TextView
+                android:id="@+id/codeText"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:textColor="@color/accent"
+                android:textSize="28sp"
+                android:textStyle="bold" />
+
+            <Button
+                android:id="@+id/btBtn"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="블루투스 연결 대기 시작" />
+
+            <TextView
+                style="@style/Hint"
+                android:text="• 블루투스(무선): 퀘스트 앱에서 '휴대폰 찾기' → 위 코드를 고르세요. 화질이 낮고 끊길 수 있어요.\n• USB-C 케이블(추천): 케이블로 두 기기를 꽂으면 자동으로 USB로 바뀌고 훨씬 선명·부드러워요. 허용 창이 뜨면 '확인'." />
+        </LinearLayout>
+
+        <!-- 2. 원격 조작 -->
+        <LinearLayout style="@style/Card">
+
+            <TextView style="@style/CardTitle" android:text="2. 원격 조작 권한 (접근성)" />
+
+            <TextView
+                android:id="@+id/a11yStatus"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:textSize="15sp" />
+
+            <Button
+                android:id="@+id/a11yBtn"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content" />
+
+            <TextView
+                style="@style/Hint"
+                android:text="접근성 → 설치된 앱(또는 설치된 서비스) → 'QP브릿지 원격 조작' → 사용.\n\n회색으로 막혀 있으면(Android 13 이상): 아래 버튼 → 오른쪽 위 ⋮ → '제한된 설정 허용' 후 다시 켜세요." />
+
+            <Button
+                android:id="@+id/restrictedBtn"
+                style="?android:attr/borderlessButtonStyle"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="앱 정보 열기 (제한된 설정 허용)" />
+        </LinearLayout>
+
+        <!-- 3. 화면 공유 -->
+        <LinearLayout style="@style/Card">
+
+            <TextView style="@style/CardTitle" android:text="3. 화면 공유" />
+
+            <TextView
+                android:id="@+id/shareStatus"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:textSize="15sp" />
+
+            <Button
+                android:id="@+id/shareBtn"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content" />
+
+            <TextView
+                style="@style/Hint"
+                android:text="'시작'을 누르면 화면 녹화 허용 창이 뜹니다. '전체 화면'을 고르세요." />
+        </LinearLayout>
+
+        <TextView
+            android:id="@+id/logText"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:textColor="@color/muted"
+            android:textIsSelectable="true"
+            android:textSize="12sp" />
+    </LinearLayout>
+</ScrollView>

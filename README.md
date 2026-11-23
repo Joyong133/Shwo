@@ -62,8 +62,8 @@ Meta Quest 용 APK(`busan-vr/release/`)와 웹 빌드(`busan/` → GitHub Pages 
 
 ---
 
-## QP브릿지 — 메타퀘스트 ↔ 휴대폰 블루투스 연결 (`qp-bridge/`)
+## QP브릿지 — 휴대폰 화면을 메타퀘스트에서 보고 원격 조작 (`qp-bridge/`)
 
-메타퀘스트와 Android 휴대폰을 Wi-Fi 없이 블루투스(BLE)로 연결하는 앱 한 쌍입니다.
+휴대폰 화면을 메타퀘스트에 띄우고 퀘스트 컨트롤러로 휴대폰을 조작하는 앱 한 쌍입니다. Wi-Fi 없이 USB-C 케이블(추천) 또는 블루투스로 연결합니다.
 `qp-bridge/release/QPBridge-Quest.apk`(퀘스트용)와 `QPBridge-Phone.apk`(휴대폰용)를 각각 설치하세요.
 자세한 내용은 [`qp-bridge/README.md`](qp-bridge/README.md) 를 참고하세요.

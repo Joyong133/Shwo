@@ -1,0 +1,173 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/bg"
+    android:orientation="horizontal">
+
+    <!-- 휴대폰 화면 -->
+    <FrameLayout
+        android:layout_width="0dp"
+        android:layout_height="match_parent"
+        android:layout_weight="1"
+        android:background="#000000"
+        android:padding="8dp">
+
+        <com.shwo.qpbridge.AspectFrame
+            android:id="@+id/videoFrame"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center">
+
+            <SurfaceView
+                android:id="@+id/surface"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent" />
+
+            <TextView
+                android:id="@+id/overlay"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:background="#1E222B"
+                android:gravity="center"
+                android:padding="20dp"
+                android:textColor="@color/muted"
+                android:textSize="15sp" />
+        </com.shwo.qpbridge.AspectFrame>
+    </FrameLayout>
+
+    <!-- 조작판 -->
+    <ScrollView
+        android:layout_width="320dp"
+        android:layout_height="match_parent">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:padding="14dp">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/app_name"
+                android:textColor="@color/text"
+                android:textSize="20sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/linkStatus"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:textSize="15sp" />
+
+            <TextView
+                android:id="@+id/latencyText"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:textColor="@color/muted"
+                android:textSize="12sp" />
+
+            <TextView
+                android:id="@+id/phoneStatus"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:background="@drawable/card_bg"
+                android:padding="10dp"
+                android:textColor="@color/warn"
+                android:textSize="13sp"
+                android:visibility="gone" />
+
+            <Button
+                android:id="@+id/findBtn"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp" />
+
+            <LinearLayout
+                android:id="@+id/peerList"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical" />
+
+            <Button
+                android:id="@+id/disconnectBtn"
+                style="?android:attr/borderlessButtonStyle"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="연결 끊기" />
+
+            <TextView
+                style="@style/Hint"
+                android:text="USB-C 케이블로 연결하면 자동으로 USB를 사용해요 (훨씬 선명). 'USB 허용' 창이 뜨면 확인을 누르세요." />
+
+            <TextView style="@style/CardTitle" android:layout_marginTop="14dp" android:text="휴대폰 버튼" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal">
+
+                <Button android:id="@+id/backBtn" style="@style/NavBtn" android:text="◀ 뒤로" />
+                <Button android:id="@+id/homeBtn" style="@style/NavBtn" android:text="● 홈" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal">
+
+                <Button android:id="@+id/recentsBtn" style="@style/NavBtn" android:text="▢ 최근 앱" />
+                <Button android:id="@+id/notifBtn" style="@style/NavBtn" android:text="알림창" />
+            </LinearLayout>
+
+            <TextView style="@style/CardTitle" android:layout_marginTop="14dp" android:text="글자 입력 (휴대폰 입력칸을 먼저 누르세요)" />
+
+            <EditText
+                android:id="@+id/textInput"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:hint="휴대폰에 입력할 글자"
+                android:imeOptions="actionSend"
+                android:inputType="text"
+                android:textColor="@color/text"
+                android:textColorHint="@color/muted" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal">
+
+                <Button android:id="@+id/sendTextBtn" style="@style/NavBtn" android:text="입력" />
+                <Button android:id="@+id/backspaceBtn" style="@style/NavBtn" android:text="⌫ 지우기" />
+            </LinearLayout>
+
+            <TextView style="@style/CardTitle" android:layout_marginTop="14dp" android:text="화질" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal">
+
+                <Button android:id="@+id/q0" style="@style/NavBtn" android:text="부드럽게" />
+                <Button android:id="@+id/q1" style="@style/NavBtn" android:text="보통" />
+                <Button android:id="@+id/q2" style="@style/NavBtn" android:text="선명하게" />
+            </LinearLayout>
+
+            <TextView
+                style="@style/Hint"
+                android:text="조작: 트리거로 누르기 = 탭, 길게 누르기 = 길게 탭, 누른 채 움직이기 = 스와이프, 스틱 = 스크롤" />
+
+            <TextView
+                android:id="@+id/logText"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:textColor="@color/muted"
+                android:textIsSelectable="true"
+                android:textSize="11sp" />
+        </LinearLayout>
+    </ScrollView>
+</LinearLayout>

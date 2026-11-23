@@ -13,8 +13,8 @@ android {
         applicationId 'com.shwo.qpbridge'
         minSdk 26
         targetSdk 34
-        versionCode 1
-        versionName '1.0'
+        versionCode 2
+        versionName '2.0'
     }
 
     buildFeatures {
@@ -23,19 +23,17 @@ android {
 
     flavorDimensions 'device'
     productFlavors {
-        // 메타퀘스트용: BLE 중앙(찾아서 연결하는 쪽)
+        // 메타퀘스트용: 휴대폰 화면을 보고 조작하는 쪽
         quest {
             dimension 'device'
             applicationIdSuffix '.quest'
-            buildConfigField 'String', 'DEFAULT_ROLE', '"central"'
-            buildConfigField 'String', 'DEVICE_KIND', '"quest"'
+            buildConfigField 'boolean', 'IS_VIEWER', 'true'
         }
-        // 휴대폰용: BLE 주변기기(광고하고 기다리는 쪽)
+        // 휴대폰용: 화면을 보내고 조작을 받는 쪽
         phone {
             dimension 'device'
             applicationIdSuffix '.phone'
-            buildConfigField 'String', 'DEFAULT_ROLE', '"peripheral"'
-            buildConfigField 'String', 'DEVICE_KIND', '"phone"'
+            buildConfigField 'boolean', 'IS_VIEWER', 'false'
         }
     }
 
