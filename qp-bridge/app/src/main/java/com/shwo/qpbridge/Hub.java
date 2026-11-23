@@ -113,6 +113,12 @@ public final class Hub implements Link.Callback {
         return send(type, new byte[0]);
     }
 
+    /** 현재 연결로 실제 내보낸 누적 바이트 */
+    public long sentTotal() {
+        Link l = active();
+        return l == null ? 0 : l.sentTotal();
+    }
+
     public long pendingBytes() {
         Link l = active();
         return l == null ? 0 : l.pendingBytes();

@@ -15,8 +15,9 @@ import android.os.Looper;
 import android.os.SystemClock;
 import android.provider.Settings;
 import android.view.MotionEvent;
-import android.view.SurfaceHolder;
-import android.view.SurfaceView;
+import android.graphics.SurfaceTexture;
+import android.view.Surface;
+import android.view.TextureView;
 import android.view.View;
 import android.view.inputmethod.EditorInfo;
 import android.widget.Button;
@@ -42,8 +43,10 @@ public class ViewerActivity extends Activity implements Hub.Listener, VideoDecod
     private int quality;
 
     private AspectFrame videoFrame;
-    private SurfaceView surface;
-    private TextView overlay, linkStatus, latencyText, phoneStatus, logText;
+    private TextureView surface;
+    private Surface videoSurface;
+    private String phoneStats = "";
+    private TextView overlay, linkStatus, latencyText, phoneStatus, logText, diagText;
     private Button findBtn, disconnectBtn;
     private LinearLayout peerList;
     private Button[] qualityBtns;
@@ -63,9 +66,22 @@ public class ViewerActivity extends Activity implements Hub.Listener, VideoDecod
         @Override
         public void run() {
             if (hub.isReady()) hub.send(Proto.PING, Proto.longBytes(SystemClock.elapsedRealtime()));
+            decoder.skipIfStalled();
+            updateDiagnostics();
             main.postDelayed(this, 2000);
         }
     };
+
+    /** 영상이 안 보일 때 원인을 찾을 수 있게 숫자로 보여줌 */
+    private void updateDiagnostics() {
+        String d = "영상 설정 " + decoder.configs.get() + "회 · 받은 프레임 " + decoder.received.get()
+                + " · 화면 표시 " + decoder.rendered.get() + (decoder.errors.get() > 0 ? " · 오류 " + decoder.errors.get() : "")
+                + "\n디코더 " + decoder.decoderName + (phoneStats.isEmpty() ? "" : "\n휴대폰: " + phoneStats);
+        diagText.setText(d);
+        if (!hasVideo && hub.isReady() && phoneStatus.getVisibility() != View.VISIBLE) {
+            overlay.setText("휴대폰 화면을 기다리는 중…\n\n" + d);
+        }
+    }
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -81,6 +97,7 @@ public class ViewerActivity extends Activity implements Hub.Listener, VideoDecod
         latencyText = findViewById(R.id.latencyText);
         phoneStatus = findViewById(R.id.phoneStatus);
         logText = findViewById(R.id.logText);
+        diagText = findViewById(R.id.diagText);
         findBtn = findViewById(R.id.findBtn);
         disconnectBtn = findViewById(R.id.disconnectBtn);
         peerList = findViewById(R.id.peerList);
@@ -92,19 +109,27 @@ public class ViewerActivity extends Activity implements Hub.Listener, VideoDecod
         hub.addListener(this);
         hub.usb.start();
 
-        surface.getHolder().addCallback(new SurfaceHolder.Callback() {
+        // TextureView: 앱 창 안에 직접 그려서 퀘스트 패널에서도 확실히 보임 (SurfaceView 는 별도 층이라 안 보일 수 있음)
+        surface.setSurfaceTextureListener(new TextureView.SurfaceTextureListener() {
             @Override
-            public void surfaceCreated(SurfaceHolder h) {
-                decoder.setSurface(h.getSurface());
+            public void onSurfaceTextureAvailable(SurfaceTexture st, int w, int h) {
+                videoSurface = new Surface(st);
+                decoder.setSurface(videoSurface);
             }
 
             @Override
-            public void surfaceChanged(SurfaceHolder h, int format, int width, int height) {}
+            public void onSurfaceTextureSizeChanged(SurfaceTexture st, int w, int h) {}
 
             @Override
-            public void surfaceDestroyed(SurfaceHolder h) {
+            public boolean onSurfaceTextureDestroyed(SurfaceTexture st) {
                 decoder.setSurface(null);
+                if (videoSurface != null) videoSurface.release();
+                videoSurface = null;
+                return true;
             }
+
+            @Override
+            public void onSurfaceTextureUpdated(SurfaceTexture st) {}
         });
         setupTouch();
 
@@ -333,6 +358,7 @@ public class ViewerActivity extends Activity implements Hub.Listener, VideoDecod
             hasVideo = false;
             phoneStatus.setVisibility(View.GONE);
             latencyText.setText("");
+            phoneStats = "";
         }
         wasReady = ready;
         refresh();
@@ -350,6 +376,14 @@ public class ViewerActivity extends Activity implements Hub.Listener, VideoDecod
             case Proto.PONG: {
                 long rtt = SystemClock.elapsedRealtime() - Proto.readLong(p);
                 main.post(() -> latencyText.setText("왕복 지연 " + rtt + " ms"));
+                break;
+            }
+            case Proto.LOG:
+                hub.log("[폰] " + Proto.str(p));
+                break;
+            case Proto.STATS: {
+                String st = Proto.str(p);
+                main.post(() -> phoneStats = st);
                 break;
             }
             case Proto.STATUS: {

@@ -34,6 +34,8 @@ public final class Proto {
     public static final byte PING = 0x02;             // long
     public static final byte PONG = 0x03;             // long
     public static final byte STATUS = 0x04;           // 폰 상태 안내 (UTF-8)
+    public static final byte LOG = 0x05;              // 폰 기록 한 줄 (UTF-8) → 퀘스트 기록창에 표시
+    public static final byte STATS = 0x06;            // 폰 전송 상태 한 줄 (UTF-8)
     public static final byte VIDEO_CONFIG = 0x10;     // int 폭, int 높이, H.264 SPS/PPS
     public static final byte VIDEO_FRAME = 0x11;      // byte 플래그(bit0 키프레임), H.264 데이터
     public static final byte REQUEST_KEYFRAME = 0x12; // (없음)

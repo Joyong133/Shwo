@@ -38,6 +38,8 @@ public abstract class Link {
     protected volatile String detail = "";
     /** 아직 보내지 못한 바이트 수 (흐름 제어용) */
     protected final AtomicLong pending = new AtomicLong();
+    /** 실제로 내보낸 누적 바이트 (전송 속도 측정용) */
+    protected final AtomicLong sentTotal = new AtomicLong();
 
     protected Link(Context ctx) {
         this.ctx = ctx.getApplicationContext();
@@ -57,6 +59,10 @@ public abstract class Link {
 
     public long pendingBytes() {
         return pending.get();
+    }
+
+    public long sentTotal() {
+        return sentTotal.get();
     }
 
     /** 화면 표시용 이름 */

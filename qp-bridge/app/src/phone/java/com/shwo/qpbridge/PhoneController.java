@@ -61,6 +61,12 @@ final class PhoneController implements Hub.Listener {
         if (s != null) s.onLinkChanged();
     }
 
+    /** 휴대폰 기록을 퀘스트 기록창에도 보냄 (문제 찾기용). 앞의 "HH:mm:ss  " 는 뺌 */
+    @Override
+    public void onLog(String line) {
+        if (hub.isReady()) hub.send(Proto.LOG, Proto.utf8(line.length() > 10 ? line.substring(10) : line));
+    }
+
     @Override
     public void onMessage(byte type, byte[] p) {
         main.post(() -> handle(type, p));

@@ -7,7 +7,12 @@ import android.os.Build;
 import android.view.Surface;
 
 import java.nio.ByteBuffer;
+import android.media.MediaCodecList;
+
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 
@@ -36,6 +41,11 @@ final class VideoDecoder {
     private volatile boolean gotKey;
     private volatile long lastKeyRequest;
 
+    // 진단용 카운터
+    final AtomicInteger configs = new AtomicInteger(), received = new AtomicInteger(), rendered = new AtomicInteger(),
+            errors = new AtomicInteger();
+    volatile String decoderName = "-";
+
     VideoDecoder(Callback cb) {
         this.cb = cb;
     }
@@ -60,6 +70,7 @@ final class VideoDecoder {
         ByteBuffer b = ByteBuffer.wrap(payload);
         int w = b.getInt(), h = b.getInt();
         byte[] c = Arrays.copyOfRange(payload, 8, payload.length);
+        configs.incrementAndGet();
         synchronized (lock) {
             if (running && w == width && h == height && Arrays.equals(c, csd)) return; // 같은 설정 재전송
             width = w;
@@ -71,6 +82,7 @@ final class VideoDecoder {
     }
 
     void onFrame(byte[] payload) {
+        received.incrementAndGet();
         if (!running || payload.length < 2) return;
         boolean key = (payload[0] & 1) != 0;
         if (!gotKey && !key) {
@@ -97,15 +109,26 @@ final class VideoDecoder {
     private void restartLocked() {
         stopLocked();
         if (surface == null || !surface.isValid() || csd == null) return;
-        // 저지연 옵션을 지원하지 않는 디코더는 configure 가 실패하므로, 실패하면 옵션 없이 다시 시도
-        MediaCodec codec = createDecoder(true);
-        if (codec == null) codec = createDecoder(false);
+        // 디코더마다 (조정된 설정 → 기본 설정) 순서로 시도. 저지연 옵션을 거부하는 디코더도 있음
+        MediaCodec codec = null;
+        for (String name : decoderNames()) {
+            if (badDecoders.contains(name)) continue;
+            codec = createDecoder(name, true);
+            if (codec == null) codec = createDecoder(name, false);
+            if (codec != null) {
+                decoderName = name;
+                break;
+            }
+        }
         if (codec == null) {
+            badDecoders.clear();
             cb.onError("이 기기에서 영상 디코더를 시작할 수 없어요.");
             return;
         }
         queue.clear();
         gotKey = false;
+        receivedAtStart = received.get();
+        renderedAtStart = rendered.get();
         active = codec;
         running = true;
         byte[] config = csd;
@@ -116,11 +139,43 @@ final class VideoDecoder {
         askKey();
     }
 
-    private MediaCodec createDecoder(boolean tuned) {
+    private final List<String> badDecoders = new ArrayList<>();
+    private int receivedAtStart, renderedAtStart;
+
+    /** 프레임은 들어오는데 화면에 하나도 안 그려지면 다음 디코더로 바꿈. 바꿨으면 true */
+    boolean skipIfStalled() {
+        synchronized (lock) {
+            if (!running || rendered.get() != renderedAtStart || received.get() - receivedAtStart < 40) return false;
+            cb.onError("디코더 " + decoderName + " 가 화면을 그리지 않아요 → 다른 디코더로 바꿉니다");
+            badDecoders.add(decoderName);
+            restartLocked();
+            return true;
+        }
+    }
+
+    private static List<String> decoderNames() {
+        List<String> hw = new ArrayList<>(), sw = new ArrayList<>();
+        for (MediaCodecInfo info : new MediaCodecList(MediaCodecList.REGULAR_CODECS).getCodecInfos()) {
+            if (info.isEncoder()) continue;
+            boolean avc = false;
+            for (String t : info.getSupportedTypes()) if (t.equalsIgnoreCase(MediaFormat.MIMETYPE_VIDEO_AVC)) avc = true;
+            if (!avc) continue;
+            String n = info.getName();
+            if (n.endsWith(".secure")) continue;
+            boolean soft = Build.VERSION.SDK_INT >= 29 ? info.isSoftwareOnly()
+                    : n.startsWith("OMX.google.") || n.startsWith("c2.android.");
+            (soft ? sw : hw).add(n);
+        }
+        hw.addAll(sw);
+        return hw;
+    }
+
+    private MediaCodec createDecoder(String name, boolean tuned) {
         MediaCodec c = null;
         try {
-            c = MediaCodec.createDecoderByType(MediaFormat.MIMETYPE_VIDEO_AVC);
+            c = MediaCodec.createByCodecName(name);
             MediaFormat f = MediaFormat.createVideoFormat(MediaFormat.MIMETYPE_VIDEO_AVC, width, height);
+            f.setInteger(MediaFormat.KEY_MAX_INPUT_SIZE, Math.max(512 * 1024, width * height * 2));
             if (tuned) {
                 f.setInteger(MediaFormat.KEY_PRIORITY, 0);
                 if (Build.VERSION.SDK_INT >= 30 && c.getCodecInfo().getCapabilitiesForType(MediaFormat.MIMETYPE_VIDEO_AVC)
@@ -186,6 +241,7 @@ final class VideoDecoder {
                         || out == MediaCodec.INFO_OUTPUT_BUFFERS_CHANGED) {
                     if (out >= 0) {
                         c.releaseOutputBuffer(out, true);
+                        rendered.incrementAndGet();
                         if (first) {
                             first = false;
                             cb.onFirstFrame();
@@ -196,7 +252,11 @@ final class VideoDecoder {
         } catch (InterruptedException ignored) {
         } catch (Exception e) {
             // 디코더 오류 → 다음 설정(SPS/PPS)이 오면 새로 만들도록 표시하고 키프레임 요청
+            errors.incrementAndGet();
             if (active == c) {
+                // 같은 디코더가 계속 실패하면 다음 디코더로
+                if (errors.get() % 3 == 0) badDecoders.add(decoderName);
+                cb.onError("영상 디코더 오류 (" + decoderName + "): " + e.getClass().getSimpleName());
                 running = false;
                 active = null;
                 gotKey = false;

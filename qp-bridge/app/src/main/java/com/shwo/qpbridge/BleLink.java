@@ -16,6 +16,7 @@ public abstract class BleLink extends Link {
     private final ArrayDeque<byte[]> queue = new ArrayDeque<>();
     private final Proto.Reassembler reassembler = new Proto.Reassembler();
     private boolean sending;
+    private int inFlight;
     private int startRetries;
     private int generation; // 연결이 바뀌면 증가 → 이전 연결용으로 예약된 패킷 무시
     private final Runnable watchdog = () -> {
@@ -75,6 +76,7 @@ public abstract class BleLink extends Link {
         if (ok) {
             queue.pollFirst();
             pending.addAndGet(-p.length);
+            inFlight = p.length;
             sending = true;
             startRetries = 0;
             main.removeCallbacks(watchdog);
@@ -90,6 +92,8 @@ public abstract class BleLink extends Link {
     }
 
     protected void onPacketSent() {
+        sentTotal.addAndGet(inFlight);
+        inFlight = 0;
         main.removeCallbacks(watchdog);
         sending = false;
         pump();

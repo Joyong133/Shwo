@@ -420,6 +420,7 @@ public final class UsbLink extends Link {
                     off += n;
                 }
                 pending.addAndGet(-frame.length);
+                sentTotal.addAndGet(frame.length);
             }
         } catch (InterruptedException ignored) {
         } catch (IOException e) {

@@ -29,6 +29,7 @@ public class PhoneActivity extends Activity implements Hub.Listener {
     private Hub hub;
     private TextView linkStatus, codeText, a11yStatus, shareStatus, logText;
     private Button a11yBtn, shareBtn, btBtn;
+    private boolean resumed, wasReady, askedCapture;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -66,8 +67,15 @@ public class PhoneActivity extends Activity implements Hub.Listener {
     @Override
     protected void onResume() {
         super.onResume();
+        resumed = true;
         hub.usb.scan();
         refresh();
+    }
+
+    @Override
+    protected void onPause() {
+        resumed = false;
+        super.onPause();
     }
 
     @Override
@@ -213,6 +221,14 @@ public class PhoneActivity extends Activity implements Hub.Listener {
 
     @Override
     public void onHubState() {
+        boolean ready = hub.isReady();
+        // 퀘스트가 연결됐는데 아직 공유 전이면 바로 화면 공유 허용 창을 띄움 (한 번만)
+        if (ready && !wasReady && resumed && !MirrorService.isRunning() && !askedCapture) {
+            askedCapture = true;
+            hub.log("퀘스트가 연결됐어요. 화면 공유를 시작합니다 — '지금 시작'(전체 화면)을 눌러 주세요.");
+            startCapture();
+        }
+        wasReady = ready;
         refresh();
     }
 
