@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical">
+
+    <Button
+        android:id="@+id/fileSendBtn"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:textAllCaps="false" />
+
+    <TextView
+        android:id="@+id/fileStatus"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="4dp"
+        android:textColor="@color/text"
+        android:textIsSelectable="true"
+        android:textSize="13sp"
+        android:visibility="gone" />
+
+    <Button
+        android:id="@+id/fileCancelBtn"
+        style="?android:attr/borderlessButtonStyle"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="전송 취소"
+        android:visibility="gone" />
+
+    <TextView
+        style="@style/Hint"
+        android:text="받은 파일은 '다운로드 / QPBridge' 폴더에 저장돼요. 다른 앱에서 '공유 → QP브릿지'로 보낼 수도 있어요. USB가 가장 빠르고, 블루투스는 큰 파일에 오래 걸려요." />
+
+    <LinearLayout
+        android:id="@+id/fileList"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical" />
+</LinearLayout>

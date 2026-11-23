@@ -178,6 +178,10 @@
                 style="@style/Hint"
                 android:text="조작: 트리거로 누르기 = 탭, 길게 누르기 = 길게 탭, 누른 채 움직이기 = 스와이프, 스틱 = 스크롤" />
 
+            <TextView style="@style/CardTitle" android:layout_marginTop="14dp" android:text="파일 주고받기" />
+
+            <include layout="@layout/file_section" />
+
             <TextView style="@style/CardTitle" android:layout_marginTop="14dp" android:text="진단 (영상이 안 보이면 이 내용을 알려 주세요)" />
 
             <TextView

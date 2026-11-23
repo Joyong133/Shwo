@@ -50,6 +50,13 @@ public final class Proto {
     public static final byte TEXT = 0x22;             // UTF-8 (입력칸에 이어 쓰기)
     public static final byte BACKSPACE = 0x23;        // (없음)
 
+    // 파일 주고받기 (양방향). OFFER/CHUNK/END 는 순서가 중요해서 영상과 같은 '뒤로' 줄에 넣음
+    public static final byte FILE_OFFER = 0x30;       // long id, long 크기, UTF 이름, UTF MIME
+    public static final byte FILE_CHUNK = 0x31;       // long id, long 위치, 데이터
+    public static final byte FILE_END = 0x32;         // long id, long 전체 크기, long CRC32
+    public static final byte FILE_CANCEL = 0x33;      // long id, UTF 이유 (받는 쪽/보내는 쪽 모두)
+    public static final byte FILE_DONE = 0x34;        // long id, byte 1 저장됨 / 0 실패, UTF 저장 위치
+
     public static final int MAX_MESSAGE = 4 * 1024 * 1024;
 
     public static final int CAP_HEVC = 1;
@@ -57,7 +64,8 @@ public final class Proto {
 
     /** 영상은 큰 데이터라 뒤로, 나머지(소리·조작·상태)는 먼저 보냄 */
     public static boolean isBulk(byte type) {
-        return type == VIDEO_FRAME || type == VIDEO_CONFIG;
+        return type == VIDEO_FRAME || type == VIDEO_CONFIG
+                || type == FILE_OFFER || type == FILE_CHUNK || type == FILE_END;
     }
 
     public static byte[] utf8(String s) {

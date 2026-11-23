@@ -30,6 +30,7 @@ public class PhoneActivity extends Activity implements Hub.Listener {
     private TextView linkStatus, codeText, a11yStatus, shareStatus, logText;
     private Button a11yBtn, shareBtn, btBtn;
     private boolean resumed, wasReady, askedCapture;
+    private FileUi fileUi;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -57,6 +58,8 @@ public class PhoneActivity extends Activity implements Hub.Listener {
         });
         btBtn.setOnClickListener(v -> startBluetooth());
 
+        fileUi = new FileUi(this, "퀘스트로");
+        fileUi.handleShareIntent(getIntent());
         startBluetooth();
         refresh();
         StringBuilder sb = new StringBuilder();
@@ -82,11 +85,13 @@ public class PhoneActivity extends Activity implements Hub.Listener {
     protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
         hub.usb.scan(); // USB 액세서리로 열린 경우
+        fileUi.handleShareIntent(intent);
     }
 
     @Override
     protected void onDestroy() {
         hub.removeListener(this);
+        fileUi.detach();
         if (isFinishing() && !MirrorService.isRunning()) hub.stopAll();
         super.onDestroy();
     }
@@ -171,6 +176,7 @@ public class PhoneActivity extends Activity implements Hub.Listener {
 
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        if (fileUi.onActivityResult(requestCode, resultCode, data)) return;
         if (requestCode == REQ_CAPTURE) {
             if (resultCode == RESULT_OK && data != null) {
                 Intent svc = new Intent(this, MirrorService.class)

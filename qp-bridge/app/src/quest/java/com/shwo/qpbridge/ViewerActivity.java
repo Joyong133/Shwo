@@ -42,6 +42,7 @@ public class ViewerActivity extends Activity implements Hub.Listener, VideoDecod
     private boolean soundOn = true, panelHidden;
     private Button soundBtn, panelBtn;
     private View controlPanel;
+    private FileUi fileUi;
     private boolean wasReady;
     private boolean hasVideo;
     private int quality;
@@ -186,6 +187,8 @@ public class ViewerActivity extends Activity implements Hub.Listener, VideoDecod
         StringBuilder sb = new StringBuilder();
         for (String s : hub.logLines()) sb.append(s).append('\n');
         logText.setText(sb);
+        fileUi = new FileUi(this, "휴대폰으로");
+        fileUi.handleShareIntent(getIntent());
 
         if (missingPermissions().isEmpty()) hub.wantBluetooth();
         else if (!missingPermissions().isEmpty()) requestPermissions(missingPermissions().toArray(new String[0]), REQ_PERMS);
@@ -203,12 +206,14 @@ public class ViewerActivity extends Activity implements Hub.Listener, VideoDecod
     protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
         hub.usb.scan();
+        fileUi.handleShareIntent(intent);
     }
 
     @Override
     protected void onDestroy() {
         main.removeCallbacksAndMessages(null);
         hub.removeListener(this);
+        fileUi.detach();
         decoder.reset();
         audio.reset();
         if (isFinishing()) hub.stopAll();
@@ -251,6 +256,11 @@ public class ViewerActivity extends Activity implements Hub.Listener, VideoDecod
             return;
         }
         hub.wantBluetooth();
+    }
+
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        fileUi.onActivityResult(requestCode, resultCode, data);
     }
 
     @Override
