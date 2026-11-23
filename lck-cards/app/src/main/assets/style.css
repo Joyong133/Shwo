@@ -320,3 +320,29 @@ button.wide { width: 100%; margin-top: 14px; }
 .wtable .stars { font-size: 14px; }
 .small { font-size: 12px !important; color: var(--muted); }
 [hidden] { display: none !important; }
+
+/* ───── 내 카드 ───── */
+.coll { background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 14px; margin: 4px 0 12px; }
+.coll-top { display: flex; justify-content: space-between; align-items: baseline; }
+.coll-top b { font-size: 26px; font-weight: 900; }
+.coll-top span { color: var(--muted); font-size: 14px; }
+.coll-pct { font-size: 20px; font-weight: 900; color: var(--accent2); }
+.coll-progress { height: 10px; border-radius: 5px; background: var(--bg2); overflow: hidden; margin: 8px 0 12px; }
+.coll-progress i { display: block; height: 100%; border-radius: 5px; background: linear-gradient(90deg, var(--accent), var(--accent2)); min-width: 2px; }
+.coll-tiers { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; }
+.ct { background: var(--bg2); border-radius: 10px; padding: 6px 2px; text-align: center; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.ct b { font-size: 10.5px; font-weight: 900; letter-spacing: .3px; }
+.ct span { font-size: 13px; font-weight: 700; }
+.coll-leagues { display: flex; flex-wrap: wrap; gap: 6px 12px; margin-top: 10px; font-size: 12px; color: var(--muted); }
+.coll-foot { display: flex; justify-content: space-between; align-items: center; margin-top: 10px; font-size: 12px; color: var(--muted); gap: 8px; }
+.coll-foot button { height: 30px; padding: 0 12px; border-radius: 8px; border: 1px solid var(--line); background: transparent; color: var(--muted); font-size: 12px; }
+.own-tag { font-size: 5.6cqw; font-weight: 800; padding: 2px 6px; border-radius: 5px; background: rgba(201, 162, 74, .9); color: #1a1406; }
+.own-line { margin: 10px 0 0; font-size: 13px; color: var(--muted); }
+.own-line b { color: var(--accent2); }
+.new-badge { display: inline-block; font-size: 12px; font-weight: 900; letter-spacing: 1px; padding: 2px 8px; border-radius: 6px; background: #ff3b6b; color: #fff; vertical-align: middle; margin-left: 4px; box-shadow: 0 0 12px rgba(255, 59, 107, .6); }
+.dup { font-size: 13px; color: var(--muted); font-weight: 700; margin-left: 4px; }
+.mini-new { position: absolute; z-index: 5; top: -6px; right: -4px; font-size: 9px; padding: 1px 5px; margin: 0; }
+.ten-summary small { font-size: 12px; color: var(--muted); font-weight: 600; }
+.tabs button { font-size: 13px; }
+#emptyMine b { color: var(--accent2); }
+.coll-foot button.armed { border-color: #ff3b6b; color: #ff7a9a; }

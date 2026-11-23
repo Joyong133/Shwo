@@ -106,7 +106,7 @@
         <div class="shine"></div>
         <div class="card-top">
           <div class="ovr"><b>${p.ovr}</b><span>${p.pos}</span>${posIcon(p.pos)}</div>
-          <div class="tags"><div class="tier-tag">${p.tier.label}</div><div class="status-tag s-${p.status}">${p.league} · ${statusLabel(p)}</div></div>
+          <div class="tags"><div class="tier-tag">${p.tier.label}</div><div class="status-tag s-${p.status}">${p.league} · ${statusLabel(p)}</div>${owned(p) ? `<div class="own-tag">보유 ×${owned(p).n}</div>` : ''}</div>
         </div>
         <div class="avatar-wrap">${p.img
           ? `<img class="photo${p.opaque ? ' opaque' : ''}" src="${p.img}" alt="${esc(p.ign)}" loading="lazy" decoding="async" onerror="this.replaceWith(document.createRange().createContextualFragment(window.__avatar('${p.id}')))">`
@@ -121,6 +121,60 @@
     </article>`;
   }
 
+  // ───── 내 카드 (뽑은 카드 기록, 기기에 저장) ─────
+  const COLL_KEY = 'lolcards.collection.v1';
+  let coll = {};
+  try { coll = JSON.parse(localStorage.getItem(COLL_KEY) || '{}') || {}; } catch (e) { coll = {}; }
+  for (const id of Object.keys(coll)) if (!byId[id]) delete coll[id];   // 없어진 선수 정리
+  const saveColl = () => { try { localStorage.setItem(COLL_KEY, JSON.stringify(coll)); } catch (e) { /* 저장 불가 */ } };
+  // 카드를 얻으면 기록하고, 처음 얻은 카드인지 돌려준다
+  function addToColl(p) {
+    const e = coll[p.id];
+    const now = Date.now();
+    coll[p.id] = { n: (e ? e.n : 0) + 1, t: e ? e.t : now, last: now };
+    return !e;
+  }
+  const owned = (p) => coll[p.id];
+  const fmtDate = (t) => { const d = new Date(t); return `${d.getFullYear()}.${d.getMonth() + 1}.${d.getDate()}`; };
+  function updateMineTab() {
+    const n = Object.keys(coll).length;
+    $('#mineTab').textContent = n ? `내 카드 ${n}` : '내 카드';
+  }
+  function renderCollBar() {
+    const bar = $('#collBar');
+    bar.hidden = state.status !== 'mine';
+    if (bar.hidden) return;
+    const mine = players.filter(owned);
+    const pct = players.length ? Math.round((mine.length / players.length) * 1000) / 10 : 0;
+    const pulls = mine.reduce((a, p) => a + coll[p.id].n, 0);
+    const label = { icon: 'ICON', legend: 'LEGEND', epic: 'EPIC', rare: 'RARE', common: 'NORMAL' };
+    const tiers = ['icon', 'legend', 'epic', 'rare', 'common'].map((t) => {
+      const tot = players.filter((p) => p.tier.key === t).length;
+      const got = mine.filter((p) => p.tier.key === t).length;
+      return `<div class="ct"><b class="tier-text-${t}">${label[t]}</b><span>${got} / ${tot}</span></div>`;
+    }).join('');
+    const leagues = LEAGUES.map((l) => `<span>${l} ${mine.filter((p) => p.league === l).length}/${players.filter((p) => p.league === l).length}</span>`).join('');
+    bar.innerHTML = `
+      <div class="coll-top">
+        <div><b>${mine.length}</b><span> / ${players.length}명 보유</span></div>
+        <div class="coll-pct">${pct}%</div>
+      </div>
+      <div class="coll-progress"><i style="width:${pct}%"></i></div>
+      <div class="coll-tiers">${tiers}</div>
+      <div class="coll-leagues">${leagues}</div>
+      <div class="coll-foot"><span>지금까지 뽑은 카드 ${pulls}장 (중복 포함)</span>${mine.length ? '<button id="collReset">초기화</button>' : ''}</div>`;
+    const r = $('#collReset');
+    // 실수로 지우지 않도록 두 번 눌러야 초기화
+    if (r) r.onclick = () => {
+      if (!r.classList.contains('armed')) {
+        r.classList.add('armed'); r.textContent = '한 번 더 누르면 모두 삭제';
+        setTimeout(() => { if (r.isConnected) { r.classList.remove('armed'); r.textContent = '초기화'; } }, 3000);
+        return;
+      }
+      coll = {}; saveColl(); updateMineTab(); applyFilters();
+    };
+  }
+
   // ───── 필터 상태 ─────
   const state = { status: 'all', league: 'ALL', pos: 'ALL', team: 'ALL', sort: 'ovr', q: '' };
   let list = [];
@@ -130,6 +184,7 @@
     list = players.filter((p) => {
       if (state.status === 'active' && p.status !== 'active') return false;
       if (state.status === 'legend' && p.status === 'active') return false;
+      if (state.status === 'mine' && !owned(p)) return false;
       if (state.league !== 'ALL' && p.league !== state.league) return false;
       if (state.pos !== 'ALL' && p.pos !== state.pos) return false;
       if (state.team !== 'ALL' && team(p).name !== state.team) return false;
@@ -144,6 +199,8 @@
       name: (a, b) => a.ign.localeCompare(b.ign, 'en', { sensitivity: 'base' }),
       team: (a, b) => LEAGUES.indexOf(a.league) - LEAGUES.indexOf(b.league) || team(a).name.localeCompare(team(b).name, 'ko') || POS[a.pos].order - POS[b.pos].order,
       pos: (a, b) => POS[a.pos].order - POS[b.pos].order || b.ovr - a.ovr,
+      recent: (a, b) => ((owned(b) || {}).last || 0) - ((owned(a) || {}).last || 0) || b.ovr - a.ovr,
+      count: (a, b) => ((owned(b) || {}).n || 0) - ((owned(a) || {}).n || 0) || b.ovr - a.ovr,
     }[state.sort];
     list.sort(cmp);
     render();
@@ -163,7 +220,10 @@
     shown = 0;
     renderMore();
     $('#count').textContent = `${list.length}명의 선수`;
-    $('#empty').hidden = list.length > 0;
+    const mineEmpty = state.status === 'mine' && !Object.keys(coll).length;
+    $('#empty').hidden = list.length > 0 || mineEmpty;
+    $('#emptyMine').hidden = !mineEmpty;
+    renderCollBar();
   }
   window.addEventListener('scroll', () => {
     if (window.innerHeight + window.scrollY > document.body.scrollHeight - 1200) renderMore();
@@ -216,6 +276,7 @@
           <div><b>${rank}</b><span>전체 ${players.length}명 중</span></div>
           <div><b>${posRank}</b><span>${POS[p.pos].ko} ${posTotal}명 중</span></div>
         </div>
+        <p class="own-line">${owned(p) ? `내 카드 · <b>${owned(p).n}장 보유</b> · 처음 획득 ${fmtDate(owned(p).t)}` : '아직 뽑지 않은 카드'}</p>
       </section>
       <section class="panel">
         <h3>선수 소개</h3>
@@ -338,10 +399,12 @@
   function openPack() {
     stopReveal();
     packPick = drawOne();
+    const isNew = addToColl(packPick);
+    saveColl(); updateMineTab();
     $('#packStage').innerHTML = `<div class="flip">
         ${cardBack(packPick)}
         <div class="flip-front">${cardHtml(packPick, true)}</div>
-      </div><p class="pack-result tier-text-${packPick.tier.key}">${packPick.tier.label} · ${packPick.stars}성</p>`;
+      </div><p class="pack-result tier-text-${packPick.tier.key}">${packPick.tier.label} · ${packPick.stars}성 ${isNew ? '<span class="new-badge">NEW</span>' : `<span class="dup">보유 ×${owned(packPick).n}</span>`}</p>`;
     showPack(1);
     requestAnimationFrame(() => setTimeout(() => $('#packStage .flip').classList.add('open'), 700));
   }
@@ -363,14 +426,16 @@
       const p = drawOne(players.filter(good), got);
       picks[Math.floor(Math.random() * 10)] = p;
     }
+    const fresh = new Set(picks.filter((p) => addToColl(p)).map((p) => p.id));
+    saveColl(); updateMineTab();
     const best = Math.min(...picks.map((p) => TIER_ORDER.indexOf(p.tier.key)));
     const counts = TIER_ORDER.map((t) => [t, picks.filter((p) => p.tier.key === t).length]).filter(([, n]) => n);
     const label = { icon: 'ICON', legend: 'LEGEND', epic: 'EPIC', rare: 'RARE', common: 'NORMAL' };
     $('#packStage').innerHTML = `<div class="ten-grid">${picks.map((p, i) => `
         <div class="flip mini${TIER_ORDER.indexOf(p.tier.key) === best && best <= 2 ? ' best' : ''}" data-id="${p.id}" style="animation-delay:${i * 40}ms">
-          ${cardBack(p)}<div class="flip-front">${miniCardHtml(p)}</div>
+          ${cardBack(p)}<div class="flip-front">${miniCardHtml(p)}${fresh.has(p.id) ? '<span class="new-badge mini-new">NEW</span>' : ''}</div>
         </div>`).join('')}</div>
-      <p class="ten-summary" hidden>${counts.map(([t, n]) => `<span class="tier-text-${t}">${label[t]} ${n}</span>`).join(' · ')}</p>
+      <p class="ten-summary" hidden>${counts.map(([t, n]) => `<span class="tier-text-${t}">${label[t]} ${n}</span>`).join(' · ')}<br><small>새 카드 ${fresh.size}장 · 내 카드 ${Object.keys(coll).length} / ${players.length}</small></p>
       <p class="ten-hint" hidden>카드를 누르면 자세히 볼 수 있어요</p>`;
     $('#pack10Skip').hidden = false;
     $('#pack10Again').hidden = true;
@@ -396,7 +461,12 @@
     $('#pack10Skip').onclick = () => { flips.forEach((f) => f.classList.add('open')); i = flips.length; done(); };
   }
 
-  function closePack() { stopReveal(); $('#pack').hidden = true; if (!current) document.body.classList.remove('locked'); }
+  function closePack() {
+    stopReveal();
+    $('#pack').hidden = true;
+    if (!current) document.body.classList.remove('locked');
+    applyFilters();
+  }
 
   // ───── 기준표 ─────
   function buildInfo() {
@@ -508,6 +578,7 @@
   };
 
   initUI();
+  updateMineTab();
   buildInfo();
   applyFilters();
   if (location.hash) syncRoute();
