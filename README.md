@@ -59,3 +59,11 @@ WebXR은 **HTTPS 주소**에서만 동작합니다.
 같은 저장소에 들어 있는 별도 프로젝트입니다. 부산 17개 명소를 지하철·버스로 여행하는 WebXR 앱이며,
 Meta Quest 용 APK(`busan-vr/release/`)와 웹 빌드(`busan/` → GitHub Pages `…/Shwo/busan/`)를 포함합니다.
 실행·빌드 방법은 [`busan-vr/README.md`](busan-vr/README.md) 를 참고하세요.
+
+---
+
+## QP브릿지 — 메타퀘스트 ↔ 휴대폰 블루투스 연결 (`qp-bridge/`)
+
+메타퀘스트와 Android 휴대폰을 Wi-Fi 없이 블루투스(BLE)로 연결하는 앱 한 쌍입니다.
+`qp-bridge/release/QPBridge-Quest.apk`(퀘스트용)와 `QPBridge-Phone.apk`(휴대폰용)를 각각 설치하세요.
+자세한 내용은 [`qp-bridge/README.md`](qp-bridge/README.md) 를 참고하세요.

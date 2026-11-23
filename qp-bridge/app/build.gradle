@@ -1,0 +1,64 @@
+plugins {
+    id 'com.android.application'
+}
+
+// 서명 키: signing/qpbridge.jks 가 있으면 그것으로, 없으면 디버그 키로 서명합니다.
+def keystoreFile = rootProject.file('signing/qpbridge.jks')
+
+android {
+    namespace 'com.shwo.qpbridge'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId 'com.shwo.qpbridge'
+        minSdk 26
+        targetSdk 34
+        versionCode 1
+        versionName '1.0'
+    }
+
+    buildFeatures {
+        buildConfig true
+    }
+
+    flavorDimensions 'device'
+    productFlavors {
+        // 메타퀘스트용: BLE 중앙(찾아서 연결하는 쪽)
+        quest {
+            dimension 'device'
+            applicationIdSuffix '.quest'
+            buildConfigField 'String', 'DEFAULT_ROLE', '"central"'
+            buildConfigField 'String', 'DEVICE_KIND', '"quest"'
+        }
+        // 휴대폰용: BLE 주변기기(광고하고 기다리는 쪽)
+        phone {
+            dimension 'device'
+            applicationIdSuffix '.phone'
+            buildConfigField 'String', 'DEFAULT_ROLE', '"peripheral"'
+            buildConfigField 'String', 'DEVICE_KIND', '"phone"'
+        }
+    }
+
+    signingConfigs {
+        release {
+            if (keystoreFile.exists()) {
+                storeFile keystoreFile
+                storePassword System.getenv('QPB_STORE_PASS') ?: 'qpbridge'
+                keyAlias 'qpbridge'
+                keyPassword System.getenv('QPB_KEY_PASS') ?: 'qpbridge'
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            signingConfig keystoreFile.exists() ? signingConfigs.release : signingConfigs.debug
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
