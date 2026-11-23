@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 108dp 어댑티브 아이콘 전경: 금색 카드 + 별 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp"
+    android:viewportWidth="108" android:viewportHeight="108">
+    <!-- 뒤 카드 -->
+    <path android:fillColor="#5B3FA8"
+        android:pathData="M33,36 L59,30 Q63,29 64,33 L72,68 Q73,72 69,73 L43,79 Q39,80 38,76 L30,41 Q29,37 33,36 Z"/>
+    <!-- 앞 카드 (금색 테두리) -->
+    <path android:fillColor="#E7C873"
+        android:pathData="M42,30 L70,30 Q75,30 75,35 L75,77 Q75,82 70,82 L42,82 Q37,82 37,77 L37,35 Q37,30 42,30 Z"/>
+    <path android:fillColor="#1A1F36"
+        android:pathData="M43,34 L69,34 Q71,34 71,36 L71,76 Q71,78 69,78 L43,78 Q41,78 41,76 L41,36 Q41,34 43,34 Z"/>
+    <!-- 별 -->
+    <path android:fillColor="#FFD45A"
+        android:pathData="M56,42 L59.5,50 L68,50.6 L61.5,56 L63.6,64.4 L56,59.8 L48.4,64.4 L50.5,56 L44,50.6 L52.5,50 Z"/>
+    <!-- 능력치 줄 -->
+    <path android:fillColor="#E7C873" android:pathData="M46,69 L66,69 L66,71 L46,71 Z"/>
+    <path android:fillColor="#8D96AD" android:pathData="M46,73 L60,73 L60,74.6 L46,74.6 Z"/>
+</vector>

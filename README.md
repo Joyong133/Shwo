@@ -59,3 +59,10 @@ WebXR은 **HTTPS 주소**에서만 동작합니다.
 같은 저장소에 들어 있는 별도 프로젝트입니다. 부산 17개 명소를 지하철·버스로 여행하는 WebXR 앱이며,
 Meta Quest 용 APK(`busan-vr/release/`)와 웹 빌드(`busan/` → GitHub Pages `…/Shwo/busan/`)를 포함합니다.
 실행·빌드 방법은 [`busan-vr/README.md`](busan-vr/README.md) 를 참고하세요.
+
+---
+
+## LCK 선수 카드 도감 (`lck-cards/`)
+
+LCK 현역·은퇴 선수 85명을 카드로 보여 주는 안드로이드 앱입니다. 설치 파일은 `lck-cards/release/lck-cards.apk`,
+자세한 내용은 [`lck-cards/README.md`](lck-cards/README.md) 를 참고하세요.
