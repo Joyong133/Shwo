@@ -139,7 +139,7 @@ public class ViewerActivity extends Activity implements Hub.Listener, VideoDecod
         for (String s : hub.logLines()) sb.append(s).append('\n');
         logText.setText(sb);
 
-        if (missingPermissions().isEmpty() && bluetoothOn()) hub.ble.start();
+        if (missingPermissions().isEmpty()) hub.wantBluetooth();
         else if (!missingPermissions().isEmpty()) requestPermissions(missingPermissions().toArray(new String[0]), REQ_PERMS);
         main.post(pinger);
         refresh();
@@ -193,6 +193,7 @@ public class ViewerActivity extends Activity implements Hub.Listener, VideoDecod
             return;
         }
         if (!bluetoothOn()) {
+            hub.wantBluetooth(); // 켜지는 대로 자동 시작
             hub.log("블루투스가 꺼져 있어요. 설정 → 기기 → 블루투스에서 켜 주세요. (USB 케이블만 쓸 거면 필요 없어요)");
             try {
                 startActivity(new Intent(Settings.ACTION_BLUETOOTH_SETTINGS));
@@ -200,7 +201,7 @@ public class ViewerActivity extends Activity implements Hub.Listener, VideoDecod
             }
             return;
         }
-        hub.ble.start();
+        hub.wantBluetooth();
     }
 
     @Override
@@ -398,6 +399,11 @@ public class ViewerActivity extends Activity implements Hub.Listener, VideoDecod
             hasVideo = true;
             overlay.setVisibility(View.GONE);
         });
+    }
+
+    @Override
+    public void onError(String message) {
+        hub.log(message);
     }
 
     @Override

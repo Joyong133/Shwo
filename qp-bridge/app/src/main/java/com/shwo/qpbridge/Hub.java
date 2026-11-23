@@ -1,6 +1,10 @@
 package com.shwo.qpbridge;
 
+import android.bluetooth.BluetoothAdapter;
+import android.content.BroadcastReceiver;
 import android.content.Context;
+import android.content.Intent;
+import android.content.IntentFilter;
 import android.os.Handler;
 import android.os.Looper;
 
@@ -46,12 +50,31 @@ public final class Hub implements Link.Callback {
     private final SimpleDateFormat timeFmt = new SimpleDateFormat("HH:mm:ss", Locale.KOREA);
     private volatile String peerName;
     private Link lastActive;
+    private boolean bluetoothWanted;
 
     private Hub(Context ctx) {
         ble = BuildConfig.IS_VIEWER ? new BleCentralLink(ctx) : new BlePeripheralLink(ctx);
         usb = new UsbLink(ctx);
         ble.setCallback(this);
         usb.setCallback(this);
+        // 블루투스를 켜는 데는 시간이 걸리므로, 켜지는 순간 자동으로 시작 / 꺼지면 정리
+        ctx.registerReceiver(new BroadcastReceiver() {
+            @Override
+            public void onReceive(Context c, Intent i) {
+                int st = i.getIntExtra(BluetoothAdapter.EXTRA_STATE, -1);
+                if (st == BluetoothAdapter.STATE_ON && bluetoothWanted) ble.start();
+                else if (st == BluetoothAdapter.STATE_OFF && ble.getState() != Link.IDLE) {
+                    ble.stop();
+                    log("블루투스가 꺼졌어요.");
+                }
+            }
+        }, new IntentFilter(BluetoothAdapter.ACTION_STATE_CHANGED));
+    }
+
+    /** 블루투스 연결을 사용 (꺼져 있으면 켜지는 대로 시작). 권한은 호출 전에 받아야 함 */
+    public void wantBluetooth() {
+        bluetoothWanted = true;
+        if (ble.bluetoothOn()) ble.start();
     }
 
     public void addListener(Listener l) {
@@ -127,6 +150,7 @@ public final class Hub implements Link.Callback {
     }
 
     public void stopAll() {
+        bluetoothWanted = false;
         ble.stop();
         usb.stop();
     }

@@ -109,6 +109,7 @@ public class PhoneActivity extends Activity implements Hub.Listener {
             return;
         }
         if (!bluetoothOn()) {
+            hub.wantBluetooth(); // 켜지는 대로 자동 시작
             try {
                 //noinspection MissingPermission
                 startActivityForResult(new Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE), REQ_ENABLE_BT);
@@ -117,7 +118,7 @@ public class PhoneActivity extends Activity implements Hub.Listener {
             }
             return;
         }
-        hub.ble.start();
+        hub.wantBluetooth();
         refresh();
     }
 
@@ -128,8 +129,7 @@ public class PhoneActivity extends Activity implements Hub.Listener {
                 || (checkSelfPermission(Manifest.permission.BLUETOOTH_ADVERTISE) == PackageManager.PERMISSION_GRANTED
                 && checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED);
         if (btOk) {
-            if (bluetoothOn()) hub.ble.start();
-            else startBluetooth();
+            startBluetooth();
         } else {
             hub.log("'근처 기기' 권한이 없으면 블루투스로 연결할 수 없어요. (USB 케이블은 사용 가능)");
         }
@@ -154,8 +154,6 @@ public class PhoneActivity extends Activity implements Hub.Listener {
             } else {
                 hub.log("화면 공유를 취소했어요.");
             }
-        } else if (requestCode == REQ_ENABLE_BT) {
-            if (bluetoothOn()) hub.ble.start();
         }
         refresh();
     }

@@ -1,6 +1,7 @@
 package com.shwo.qpbridge;
 
 import android.media.MediaCodec;
+import android.media.MediaCodecInfo;
 import android.media.MediaFormat;
 import android.os.Build;
 import android.view.Surface;
@@ -19,6 +20,8 @@ final class VideoDecoder {
         void onFirstFrame();
 
         void requestKeyframe();
+
+        void onError(String message);
     }
 
     private final Callback cb;
@@ -94,15 +97,11 @@ final class VideoDecoder {
     private void restartLocked() {
         stopLocked();
         if (surface == null || !surface.isValid() || csd == null) return;
-        MediaCodec codec;
-        try {
-            codec = MediaCodec.createDecoderByType(MediaFormat.MIMETYPE_VIDEO_AVC);
-            MediaFormat f = MediaFormat.createVideoFormat(MediaFormat.MIMETYPE_VIDEO_AVC, width, height);
-            if (Build.VERSION.SDK_INT >= 30) f.setInteger(MediaFormat.KEY_LOW_LATENCY, 1);
-            f.setInteger(MediaFormat.KEY_PRIORITY, 0);
-            codec.configure(f, surface, null, 0);
-            codec.start();
-        } catch (Exception e) {
+        // 저지연 옵션을 지원하지 않는 디코더는 configure 가 실패하므로, 실패하면 옵션 없이 다시 시도
+        MediaCodec codec = createDecoder(true);
+        if (codec == null) codec = createDecoder(false);
+        if (codec == null) {
+            cb.onError("이 기기에서 영상 디코더를 시작할 수 없어요.");
             return;
         }
         queue.clear();
@@ -115,6 +114,27 @@ final class VideoDecoder {
         thread.start();
         lastKeyRequest = 0;
         askKey();
+    }
+
+    private MediaCodec createDecoder(boolean tuned) {
+        MediaCodec c = null;
+        try {
+            c = MediaCodec.createDecoderByType(MediaFormat.MIMETYPE_VIDEO_AVC);
+            MediaFormat f = MediaFormat.createVideoFormat(MediaFormat.MIMETYPE_VIDEO_AVC, width, height);
+            if (tuned) {
+                f.setInteger(MediaFormat.KEY_PRIORITY, 0);
+                if (Build.VERSION.SDK_INT >= 30 && c.getCodecInfo().getCapabilitiesForType(MediaFormat.MIMETYPE_VIDEO_AVC)
+                        .isFeatureSupported(MediaCodecInfo.CodecCapabilities.FEATURE_LowLatency)) {
+                    f.setInteger(MediaFormat.KEY_LOW_LATENCY, 1);
+                }
+            }
+            c.configure(f, surface, null, 0);
+            c.start();
+            return c;
+        } catch (Exception e) {
+            if (c != null) c.release();
+            return null;
+        }
     }
 
     private void stopLocked() {
