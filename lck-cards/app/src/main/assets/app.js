@@ -175,6 +175,45 @@
     };
   }
 
+  // ───── 골드 (재화) ─────
+  const WALLET_KEY = 'lolcards.wallet.v1';
+  const PRICE = { one: 100, ten: 900 };
+  const START_GOLD = 1500, DAILY_GOLD = 300;
+  const DUP_REFUND = { common: 10, rare: 20, epic: 50, legend: 150, icon: 300 };
+  let wallet = null;
+  try { wallet = JSON.parse(localStorage.getItem(WALLET_KEY) || 'null'); } catch (e) { wallet = null; }
+  if (!wallet || typeof wallet.gold !== 'number') wallet = { gold: START_GOLD, daily: '', earned: 0, spent: 0 };
+  const saveWallet = () => { try { localStorage.setItem(WALLET_KEY, JSON.stringify(wallet)); } catch (e) { /* 저장 불가 */ } };
+  const fmtGold = (n) => n.toLocaleString('ko-KR');
+  function renderGold() {
+    document.querySelectorAll('.gold-amt').forEach((el) => { el.textContent = fmtGold(wallet.gold); });
+  }
+  function addGold(n) {
+    wallet.gold += n;
+    if (n > 0) wallet.earned += n; else wallet.spent -= n;
+    saveWallet(); renderGold();
+  }
+  function spendGold(n) {
+    if (wallet.gold < n) { toast(`골드가 부족합니다 (필요 ${fmtGold(n)} · 보유 ${fmtGold(wallet.gold)})`); return false; }
+    addGold(-n); return true;
+  }
+  let toastTimer = null;
+  function toast(msg) {
+    const t = $('#toast');
+    t.innerHTML = msg; t.hidden = false; t.classList.remove('show'); void t.offsetWidth; t.classList.add('show');
+    clearTimeout(toastTimer); toastTimer = setTimeout(() => { t.hidden = true; }, 2600);
+  }
+  function checkDaily() {
+    const d = new Date();
+    const today = `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`;
+    if (wallet.daily === today) return;
+    const first = !wallet.daily;
+    wallet.daily = today;
+    if (first) { saveWallet(); toast(`환영합니다! 시작 골드 <b>${fmtGold(wallet.gold)}</b>을 드려요`); return; }
+    addGold(DAILY_GOLD);
+    toast(`출석 보상 <b>+${DAILY_GOLD}골드</b>`);
+  }
+
   // ───── 필터 상태 ─────
   const state = { status: 'all', league: 'ALL', pos: 'ALL', team: 'ALL', sort: 'ovr', q: '' };
   let list = [];
@@ -397,14 +436,17 @@
     document.body.classList.add('locked');
   }
   function openPack() {
+    if (!spendGold(PRICE.one)) return;
     stopReveal();
     packPick = drawOne();
     const isNew = addToColl(packPick);
     saveColl(); updateMineTab();
+    const refund = isNew ? 0 : DUP_REFUND[packPick.tier.key];
+    if (refund) addGold(refund);
     $('#packStage').innerHTML = `<div class="flip">
         ${cardBack(packPick)}
         <div class="flip-front">${cardHtml(packPick, true)}</div>
-      </div><p class="pack-result tier-text-${packPick.tier.key}">${packPick.tier.label} · ${packPick.stars}성 ${isNew ? '<span class="new-badge">NEW</span>' : `<span class="dup">보유 ×${owned(packPick).n}</span>`}</p>`;
+      </div><p class="pack-result tier-text-${packPick.tier.key}">${packPick.tier.label} · ${packPick.stars}성 ${isNew ? '<span class="new-badge">NEW</span>' : `<span class="dup">보유 ×${owned(packPick).n} · 중복 환급 +${refund}골드</span>`}</p>`;
     showPack(1);
     requestAnimationFrame(() => setTimeout(() => $('#packStage .flip').classList.add('open'), 700));
   }
@@ -417,6 +459,7 @@
     revealTimer = revealStart = null;
   }
   function openPack10() {
+    if (!spendGold(PRICE.ten)) return;
     stopReveal();
     const got = new Set();
     const picks = [];
@@ -428,6 +471,8 @@
     }
     const fresh = new Set(picks.filter((p) => addToColl(p)).map((p) => p.id));
     saveColl(); updateMineTab();
+    const refund = picks.filter((p) => !fresh.has(p.id)).reduce((a, p) => a + DUP_REFUND[p.tier.key], 0);
+    if (refund) addGold(refund);
     const best = Math.min(...picks.map((p) => TIER_ORDER.indexOf(p.tier.key)));
     const counts = TIER_ORDER.map((t) => [t, picks.filter((p) => p.tier.key === t).length]).filter(([, n]) => n);
     const label = { icon: 'ICON', legend: 'LEGEND', epic: 'EPIC', rare: 'RARE', common: 'NORMAL' };
@@ -435,7 +480,7 @@
         <div class="flip mini${TIER_ORDER.indexOf(p.tier.key) === best && best <= 2 ? ' best' : ''}" data-id="${p.id}" style="animation-delay:${i * 40}ms">
           ${cardBack(p)}<div class="flip-front">${miniCardHtml(p)}${fresh.has(p.id) ? '<span class="new-badge mini-new">NEW</span>' : ''}</div>
         </div>`).join('')}</div>
-      <p class="ten-summary" hidden>${counts.map(([t, n]) => `<span class="tier-text-${t}">${label[t]} ${n}</span>`).join(' · ')}<br><small>새 카드 ${fresh.size}장 · 내 카드 ${Object.keys(coll).length} / ${players.length}</small></p>
+      <p class="ten-summary" hidden>${counts.map(([t, n]) => `<span class="tier-text-${t}">${label[t]} ${n}</span>`).join(' · ')}<br><small>새 카드 ${fresh.size}장${refund ? ` · 중복 환급 +${refund}골드` : ''} · 내 카드 ${Object.keys(coll).length} / ${players.length}</small></p>
       <p class="ten-hint" hidden>카드를 누르면 자세히 볼 수 있어요</p>`;
     $('#pack10Skip').hidden = false;
     $('#pack10Again').hidden = true;
@@ -559,6 +604,9 @@
     });
 
     $('#infoBtn').addEventListener('click', () => { $('#info').hidden = false; });
+    document.querySelectorAll('.gold-chip').forEach((el) => el.addEventListener('click', () => { $('#goldInfo').hidden = false; }));
+    $('#closeGoldInfo').addEventListener('click', () => { $('#goldInfo').hidden = true; });
+    $('#goldInfo').addEventListener('click', (e) => { if (e.target.id === 'goldInfo') $('#goldInfo').hidden = true; });
     $('#closeInfo').addEventListener('click', () => { $('#info').hidden = true; });
     $('#info').addEventListener('click', (e) => { if (e.target.id === 'info') $('#info').hidden = true; });
   }
@@ -571,14 +619,26 @@
 
   // 안드로이드 뒤로가기: 열린 창부터 닫고, 처리했으면 true
   window.onAndroidBack = function () {
+    if (!$('#goldInfo').hidden) { $('#goldInfo').hidden = true; return true; }
     if (!$('#info').hidden) { $('#info').hidden = true; return true; }
     if (!$('#pack').hidden) { closePack(); return true; }
     if (!$('#detail').hidden) { backFromDetail(); return true; }
+    if (window.LOLGame && window.LOLGame.onBack()) return true;
     return false;
+  };
+
+  // 대전 게임(game.js)에서 쓰는 기능
+  window.LOL = {
+    players, byId, team, POS, esc, starsHtml, miniCardHtml, avatar, owned,
+    ownedList: () => players.filter(owned),
+    getGold: () => wallet.gold, addGold, spendGold, fmtGold, toast, renderGold,
+    openDetail, applyFilters,
   };
 
   initUI();
   updateMineTab();
+  renderGold();
+  checkDaily();
   buildInfo();
   applyFilters();
   if (location.hash) syncRoute();
