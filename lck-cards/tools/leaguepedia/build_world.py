@@ -28,13 +28,13 @@ TEAMS={}
 def team_key(name):
     if name in LCKKEY: return LCKKEY[name]
     k="X_"+re.sub(r"[^A-Za-z0-9]","",name)
-    if k not in TEAMS: TEAMS[k]={"name":name,"color":COLORS.get(name,hue_color(name)),"color2":"#10131d"}
+    if k not in TEAMS: TEAMS[k]={"name":re.sub(r"\s*\(.*\)$","",name),"color":COLORS.get(name,hue_color(name)),"color2":"#10131d"}
     return k
 def short(name): return name
 def now_text(r):
     if not r: return None
     KO={'T1':'T1','Gen.G':'젠지','Hanwha Life Esports':'한화생명e스포츠','KT Rolster':'kt 롤스터','Dplus Kia':'디플러스 기아','DN SOOPers':'DN 수퍼스','Kiwoom DRX':'키움 DRX','HANJIN BRION':'한진 브리온','BNK FEARX':'BNK 피어엑스','Nongshim RedForce':'농심 레드포스'}
-    team=r["Team"]; role=r["Role"]; tk=KO.get(team,team)
+    team=r["Team"]; role=r["Role"]; tk=re.sub(r"\s*\(.*\)$","",KO.get(team,team))
     ROLE={'Coach':'코치','Streamer':'소속 방송인(스트리머)','Caster':'해설위원','Broadcast Talent':'방송 출연진','Analyst':'분석가·해설'}
     if role in ROLE: return (tk+' '+ROLE[role]) if team else {'Coach':'지도자(코치)'}.get(role,ROLE[role].replace('소속 ',''))
     if r["IsRetired"]=="1": return "은퇴"
@@ -56,36 +56,45 @@ out=[]
 have={v["OverviewPage"].lower() for v in m.values()}
 legend_links={legmap[x[0]]["OverviewPage"]:x for x in LEG if x[0] in legmap}
 
-# ── 2026 현역 (자동 산출) ──
+# ── 2026 현역 ──
+# 해외 리그에서 전성기를 보낸 베테랑은 직접 평가(전성기 기준) 능력치를 쓰고, 2026 기록은 함께 보여 준다
+peak={}
+for x in LEG:
+    for link in I["links"]:
+        if link in agg and ign_of(link).lower()==x[0].lower() and agg[link]["league"]==x[1]: peak[link]=x
 for link in I["links"]:
     if link not in agg: continue
     v=agg[link]; r=info.get(link)
+    lg=v["league"]; tname=v["team"]; posko=POSFULL[v["pos"]]
+    ph=photos.get(link)
+    tclean=re.sub(r"\s*\(.*\)$","",tname)
+    base={"key":"w:"+link,"ign":ign_of(link),"name":native(r),"pos":v["pos"],"status":"active","league":lg,"team":team_key(tname),"nick":"",
+          "rec":recd(v,"2026 시즌 기록 (%s)"%lg),"img":ph["file"] if ph else None,"opaque":(not ph["t"]) if ph else False,"now":now_text(r)}
+    if link in peak:
+        ign,_,pos,_,s,w,mm,hl,desc,teams=peak[link]
+        tn=re.sub(r"\s*\(.*\)$","",tname)
+        hl=list(hl)+["2026 %s %s (%d경기 · 승률 %d%%)"%(lg,tn,v["g"],round(v["wr"]*100))]
+        desc=desc+" 2026 시즌에는 %s에서 %d경기를 뛰었다."%(tn,v["g"])
+        base.update({"ign":ign,"pos":pos,"teams":teams,"s":s,"w":w,"m":mm,"hl":hl,"desc":desc,"peak":True})
+        out.append(base); continue
     s=rate(v,pool)
     w,mm,thl=TITLES.get(link,(0,0,[]))
-    lg=v["league"]; tname=v["team"]; posko=POSFULL[v["pos"]]
-    legend=legend_links.get(link)
     hl=list(thl)
-    if legend:
-        _,_,_,_,_,lw,lm,lhl,ldesc,lteams=legend; w,mm=max(w,lw),max(mm,lm); hl=lhl+[h for h in hl if h not in lhl]
-    hl.append("2026 %s %s %s (%d경기)"%(lg,tname,"주전" if v["g"]>=20 else "출전",v["g"]))
+    hl.append("2026 %s %s %s (%d경기)"%(lg,tclean,"주전" if v["g"]>=20 else "출전",v["g"]))
     hl.append("2026 시즌 %d승 %d패 · 승률 %d%% · KDA %.1f"%(v["w"],v["g"]-v["w"],round(v["wr"]*100),v["kda"]))
     best=STATN[s.index(max(s))]
-    desc=(ldesc+" " if legend else "")+"%s의 %s. 2026 시즌 %s %d경기에서 KDA %.1f, 킬 관여율 %d%%를 기록했다. 주로 %s를 플레이했고, 가장 돋보이는 능력치는 %s이다."%(
-        tname,posko,lg,v["g"],v["kda"],round(v["kp"]*100),"·".join(v["champs"]),best)
-    seq=v["teamSeq"]
-    teams=(legend[9]+" → " if legend else "")+" → ".join(seq)+" (2026)"
-    ph=photos.get(link)
-    out.append({"key":"w:"+link,"ign":ign_of(link),"name":native(r),"pos":v["pos"],"status":"active","league":lg,"team":team_key(tname),
-        "teams":teams,"nick":"","s":s,"w":w,"m":mm,"hl":hl,"desc":desc,"auto":True,"rec":recd(v,"2026 시즌 기록 (%s)"%lg),
-        "img":ph["file"] if ph else None,"opaque":(not ph["t"]) if ph else False,"now":now_text(r)})
+    desc="%s의 %s. 2026 시즌 %s %d경기에서 KDA %.1f, 킬 관여율 %d%%를 기록했다. 주로 %s를 플레이했고, 가장 돋보이는 능력치는 %s이다."%(
+        tclean,posko,lg,v["g"],v["kda"],round(v["kp"]*100),"·".join(v["champs"]),best)
+    base.update({"teams":" → ".join(re.sub(r"\s*\(.*\)$","",t) for t in v["teamSeq"])+" (2026)","s":s,"w":w,"m":mm,"hl":hl,"desc":desc,"auto":True})
+    out.append(base)
 
 # ── 해외 레전드 (직접 평가, 2026 비현역) ──
 for ign,lg,pos,tk,s,w,mm,hl,desc,teams in LEG:
     r=legmap.get(ign)
     page=r["OverviewPage"] if r else ign
-    if page in agg and page in I["links"]: continue   # 현역으로 이미 추가
+    if any(ign_of(l).lower()==ign.lower() and agg[l]["league"]==lg for l in peak): continue   # 현역(전성기 평가)으로 이미 추가
     ph=photos.get(page)
-    TN={"RNG":"Royal Never Give Up","EDG":"EDward Gaming","IG":"Invictus Gaming","FPX":"FunPlus Phoenix","FNC":"Fnatic","G2":"G2 Esports","EG":"Evil Geniuses","M5":"Moscow Five","TL":"Team Liquid","TSM":"TSM","C9":"Cloud9","CLG":"Counter Logic Gaming"}[tk]
+    TN={"RNG":"Royal Never Give Up","EDG":"EDward Gaming","IG":"Invictus Gaming","FPX":"FunPlus Phoenix","FNC":"Fnatic","G2":"G2 Esports","EG":"Evil Geniuses","M5":"Moscow Five","TL":"Team Liquid","TSM":"TSM","C9":"Cloud9","CLG":"Counter Logic Gaming","TES":"Top Esports","JDG":"JD Gaming","WE":"Team WE"}[tk]
     status="retired" if (not r or r["IsRetired"]=="1" or r["Role"] in ("Coach","Streamer","Caster","Analyst","Broadcast Talent")) else "former"
     out.append({"key":"w:"+page,"ign":ign,"name":native(r),"pos":pos,"status":status,"league":lg,"team":team_key(TN),"teams":teams,"nick":"",
         "s":s,"w":w,"m":mm,"hl":hl,"desc":desc,"img":ph["file"] if ph else None,"opaque":(not ph["t"]) if ph else False,"now":now_text(r)})
