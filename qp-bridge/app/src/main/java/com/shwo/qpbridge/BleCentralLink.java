@@ -19,6 +19,9 @@ import android.content.Context;
 import android.content.SharedPreferences;
 import android.os.Build;
 import android.os.ParcelUuid;
+import android.bluetooth.BluetoothSocket;
+
+import java.nio.ByteBuffer;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -55,6 +58,8 @@ public final class BleCentralLink extends BleLink {
     private boolean userStopped;
     private boolean discoveryStarted;
     private int retries;
+    private BluetoothGattCharacteristic psmChar;
+    private int fastPsm, fastAttempts;
 
     public BleCentralLink(Context ctx) {
         super(ctx);
@@ -269,7 +274,16 @@ public final class BleCentralLink extends BleLink {
                 main.removeCallbacks(connectTimeout);
                 retries = 0;
                 if (targetCode != null) prefs.edit().putString("lastCode", targetCode).apply();
-                setState(READY, "블루투스로 연결됨");
+                // 준비 완료 전에 고속 채널 번호를 먼저 읽음 (다른 블루투스 작업과 겹치지 않게)
+                psmChar = g.getService(Proto.SERVICE).getCharacteristic(Proto.PSM);
+                boolean reading = false;
+                if (psmChar != null && Build.VERSION.SDK_INT >= 29) {
+                    try {
+                        reading = g.readCharacteristic(psmChar);
+                    } catch (SecurityException ignored) {
+                    }
+                }
+                if (!reading) finishReady(0);
             });
         }
 
@@ -292,12 +306,60 @@ public final class BleCentralLink extends BleLink {
         }
 
         @Override
+        public void onCharacteristicRead(BluetoothGatt g, BluetoothGattCharacteristic c, byte[] value, int status) {
+            byte[] copy = value == null ? new byte[0] : value.clone();
+            main.post(() -> onPsmRead(g, c, copy, status));
+        }
+
+        @Override
+        @SuppressWarnings("deprecation")
+        public void onCharacteristicRead(BluetoothGatt g, BluetoothGattCharacteristic c, int status) {
+            byte[] v = c.getValue();
+            byte[] copy = v == null ? new byte[0] : v.clone();
+            main.post(() -> onPsmRead(g, c, copy, status));
+        }
+
+        @Override
         public void onCharacteristicWrite(BluetoothGatt g, BluetoothGattCharacteristic c, int status) {
             main.post(() -> {
                 if (g == gatt) onPacketSent();
             });
         }
     };
+
+    private void onPsmRead(BluetoothGatt g, BluetoothGattCharacteristic c, byte[] v, int status) {
+        if (g != gatt || state == READY || !Proto.PSM.equals(c.getUuid())) return;
+        int psm = status == BluetoothGatt.GATT_SUCCESS && v.length >= 4 ? ByteBuffer.wrap(v).getInt() : 0;
+        finishReady(psm);
+    }
+
+    private void finishReady(int psm) {
+        setState(READY, "블루투스로 연결됨");
+        fastPsm = psm;
+        fastAttempts = 0;
+        if (psm > 0) connectFast();
+    }
+
+    /** 고속 채널(L2CAP) 연결. 실패해도 일반 블루투스로 계속 */
+    public void connectFast() {
+        BluetoothDevice dev = target;
+        int psm = fastPsm;
+        if (dev == null || psm <= 0 || state != READY || Build.VERSION.SDK_INT < 29 || fastAttempts >= 3) return;
+        fastAttempts++;
+        new Thread(() -> {
+            BluetoothSocket s = null;
+            try {
+                s = dev.createInsecureL2capChannel(psm);
+                s.connect();
+                if (socketSink != null) socketSink.onSocket(s);
+            } catch (Exception e) {
+                if (s != null) {
+                    try { s.close(); } catch (Exception ignored) {}
+                }
+                log("블루투스 고속 채널 연결 실패 (" + e.getClass().getSimpleName() + "). 일반 블루투스로 계속합니다.");
+            }
+        }, "l2cap-connect").start();
+    }
 
     private void discover(BluetoothGatt g) {
         if (discoveryStarted) return;

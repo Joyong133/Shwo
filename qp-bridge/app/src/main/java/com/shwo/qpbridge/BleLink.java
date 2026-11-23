@@ -4,7 +4,6 @@ import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothManager;
 import android.content.Context;
 
-import java.util.ArrayDeque;
 import java.util.List;
 
 /** 블루투스 링크 공통: 패킷 큐(한 번에 하나씩 전송), 조립. 큐 조작은 메인 스레드에서만. */
@@ -15,7 +14,7 @@ public abstract class BleLink extends Link {
     /** BLE 속성 값 최대 길이 */
     static final int MAX_ATTR_LEN = 512;
 
-    private final ArrayDeque<byte[]> queue = new ArrayDeque<>();
+    private final MessageQueue queue = new MessageQueue();
     private final Proto.Reassembler reassembler = new Proto.Reassembler();
     private boolean sending;
     private int inFlight;
@@ -25,6 +24,17 @@ public abstract class BleLink extends Link {
         sending = false;
         pump();
     };
+
+    /** 고속(L2CAP) 소켓이 열리면 넘겨줄 곳 */
+    public interface SocketSink {
+        void onSocket(android.bluetooth.BluetoothSocket s);
+    }
+
+    protected SocketSink socketSink;
+
+    public void setSocketSink(SocketSink s) {
+        socketSink = s;
+    }
 
     protected BleLink(Context ctx) {
         super(ctx);
@@ -60,7 +70,7 @@ public abstract class BleLink extends Link {
                 pending.addAndGet(-total);
                 return;
             }
-            queue.addAll(packets);
+            queue.add(packets, !Proto.isBulk(type));
             pump();
         });
         return true;
@@ -68,21 +78,21 @@ public abstract class BleLink extends Link {
 
     private void pump() {
         if (sending || state != READY) return;
-        byte[] p = queue.peekFirst();
+        byte[] p = queue.peek();
         if (p == null) return;
         boolean ok;
         try {
             ok = writePacket(p);
         } catch (RuntimeException e) {
             // 어떤 예외든 앱이 멈추지 않게 하고 이 패킷은 버림
-            queue.pollFirst();
+            queue.advance();
             pending.addAndGet(-p.length);
             log("블루투스 전송 오류: " + e.getClass().getSimpleName() + " — 패킷을 건너뜁니다");
             main.post(this::pump);
             return;
         }
         if (ok) {
-            queue.pollFirst();
+            queue.advance();
             pending.addAndGet(-p.length);
             inFlight = p.length;
             sending = true;

@@ -44,6 +44,8 @@ public final class Hub implements Link.Callback {
 
     public final BleLink ble;
     public final UsbLink usb;
+    /** 블루투스 고속(L2CAP) */
+    public final StreamLink fast;
     private final CopyOnWriteArrayList<Listener> listeners = new CopyOnWriteArrayList<>();
     private final Handler main = new Handler(Looper.getMainLooper());
     private final ArrayList<String> logLines = new ArrayList<>();
@@ -56,8 +58,11 @@ public final class Hub implements Link.Callback {
     private Hub(Context ctx) {
         ble = BuildConfig.IS_VIEWER ? new BleCentralLink(ctx) : new BlePeripheralLink(ctx);
         usb = new UsbLink(ctx);
+        fast = new StreamLink(ctx);
         ble.setCallback(this);
         usb.setCallback(this);
+        fast.setCallback(this);
+        ble.setSocketSink(fast::attach);
         // 앱이 오류로 꺼지면 내용을 저장해 두었다가 다음 연결 때 기록에 보여줌 (문제 찾기용)
         android.content.SharedPreferences prefs = ctx.getSharedPreferences("qpbridge", Context.MODE_PRIVATE);
         Thread.UncaughtExceptionHandler prev = Thread.getDefaultUncaughtExceptionHandler();
@@ -101,8 +106,17 @@ public final class Hub implements Link.Callback {
     /** 지금 사용 중인 연결 (없으면 null) */
     public Link active() {
         if (usb.getState() == Link.READY) return usb;
+        if (fast.getState() == Link.READY) return fast;
         if (ble.getState() == Link.READY) return ble;
         return null;
+    }
+
+    public static final int KIND_NONE = 0, KIND_BLE = 1, KIND_FAST = 2, KIND_USB = 3;
+
+    /** 지금 연결 종류 (화질 결정용) */
+    public int kind() {
+        Link a = active();
+        return a == null ? KIND_NONE : a == usb ? KIND_USB : a == fast ? KIND_FAST : KIND_BLE;
     }
 
     public boolean isReady() {
@@ -170,6 +184,7 @@ public final class Hub implements Link.Callback {
 
     public void stopAll() {
         bluetoothWanted = false;
+        fast.stop();
         ble.stop();
         usb.stop();
     }
@@ -178,6 +193,12 @@ public final class Hub implements Link.Callback {
 
     @Override
     public void onLinkState(Link link) {
+        // 일반 블루투스가 끊기면 고속 채널도 닫음
+        if (link == ble && ble.getState() != Link.READY && fast.isOpen()) fast.disconnect();
+        // 퀘스트: 고속 채널만 끊기고 블루투스는 살아 있으면 잠시 후 다시 시도
+        if (link == fast && fast.getState() != Link.READY && ble.getState() == Link.READY && ble instanceof BleCentralLink) {
+            main.postDelayed(((BleCentralLink) ble)::connectFast, 3000);
+        }
         if (link.getState() == Link.READY) {
             link.send(Proto.HELLO, Proto.utf8(Link.deviceName()));
         }

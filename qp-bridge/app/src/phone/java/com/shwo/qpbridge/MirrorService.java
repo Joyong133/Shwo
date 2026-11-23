@@ -38,7 +38,7 @@ import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
-/** 휴대폰 화면을 H.264 로 인코딩해서 퀘스트로 보내는 포그라운드 서비스. */
+/** 휴대폰 화면(H.265/H.264)과 소리(AAC)를 퀘스트로 보내는 포그라운드 서비스. */
 public final class MirrorService extends Service {
 
     public static final String EXTRA_RESULT_CODE = "resultCode";
@@ -47,10 +47,12 @@ public final class MirrorService extends Service {
     private static final String CHANNEL = "mirror";
     private static final int NOTIFICATION_ID = 7;
 
-    /** {긴 변(px), 비트레이트(bps), 최대 fps} × 화질 0~2 */
-    // 블루투스는 실제로 10~30KB/s 정도라 작게 시작하고, 측정한 속도에 맞춰 비트레이트를 자동 조절
-    private static final int[][] BLE_PROFILES = {{360, 60_000, 6}, {480, 120_000, 8}, {640, 200_000, 10}};
-    private static final int[][] USB_PROFILES = {{960, 3_000_000, 30}, {1280, 6_000_000, 30}, {1920, 10_000_000, 30}};
+    /** {긴 변(px), 비트레이트 상한(bps), 최대 fps} × 화질(부드럽게/보통/선명하게) */
+    // 일반 블루투스: 느려서 '선명하게'는 해상도를 높이고 fps 를 낮춤 (화면은 대부분 멈춰 있어서 글자가 또렷해짐)
+    private static final int[][] BLE_PROFILES = {{640, 150_000, 10}, {960, 250_000, 6}, {1280, 350_000, 4}};
+    // 블루투스 고속(L2CAP)
+    private static final int[][] FAST_PROFILES = {{720, 500_000, 15}, {1080, 900_000, 10}, {1440, 1_400_000, 8}};
+    private static final int[][] USB_PROFILES = {{1280, 4_000_000, 30}, {1920, 8_000_000, 30}, {2560, 14_000_000, 30}};
 
     static volatile MirrorService instance;
 
@@ -68,7 +70,9 @@ public final class MirrorService extends Service {
     private volatile boolean needKey;
     private volatile byte[] lastConfig;
     private volatile long lastKeyRequest;
-    private int linkKind = -1; // 0 없음, 1 블루투스, 2 USB
+    private int linkKind = -1; // Hub.KIND_*
+    private volatile byte codecId = Proto.CODEC_AVC;
+    private AudioCapture audio;
     private Point captureFor = new Point();
     private final Set<String> badEncoders = new HashSet<>();
     private final AtomicInteger framesOut = new AtomicInteger();
@@ -136,6 +140,15 @@ public final class MirrorService extends Service {
         wakeLock.acquire(6 * 60 * 60 * 1000L);
         displayManager.registerDisplayListener(displayListener, main);
         hub.log("화면 공유를 시작했어요.");
+        if (AudioCapture.permitted(this)) {
+            audio = new AudioCapture(hub, projection);
+            audio.setEnabled(prefs.getBoolean("audio", true));
+            audio.start();
+        } else if (Build.VERSION.SDK_INT < 29) {
+            hub.log("이 휴대폰(Android 9 이하)은 소리 전달을 지원하지 않아요.");
+        } else {
+            hub.log("소리 전달 권한(녹음)이 없어서 화면만 보냅니다.");
+        }
         onLinkChanged();
         PhoneController.get(this).onSharingChanged();
         return START_NOT_STICKY;
@@ -157,7 +170,9 @@ public final class MirrorService extends Service {
                 .setOngoing(true)
                 .build();
         if (Build.VERSION.SDK_INT >= 29) {
-            startForeground(NOTIFICATION_ID, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION);
+            int types = ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION;
+            if (Build.VERSION.SDK_INT >= 30 && AudioCapture.permitted(this)) types |= ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE;
+            startForeground(NOTIFICATION_ID, n, types);
         } else {
             startForeground(NOTIFICATION_ID, n);
         }
@@ -172,6 +187,8 @@ public final class MirrorService extends Service {
             displayManager.unregisterDisplayListener(displayListener);
         } catch (Exception ignored) {
         }
+        if (audio != null) audio.stop();
+        audio = null;
         stopCodec();
         if (virtualDisplay != null) virtualDisplay.release();
         virtualDisplay = null;
@@ -190,8 +207,8 @@ public final class MirrorService extends Service {
 
     /** 연결 종류가 바뀌면 그에 맞는 화질로 인코더를 다시 시작 (메인 스레드) */
     void onLinkChanged() {
-        Link a = hub.active();
-        int kind = a == null ? 0 : (a == hub.usb ? 2 : 1);
+        int kind = hub.kind();
+        if (audio != null) audio.setLinkKind(kind);
         if (kind == linkKind && codec != null) return;
         linkKind = kind;
         restartEncoder();
@@ -204,10 +221,21 @@ public final class MirrorService extends Service {
         restartEncoder();
     }
 
+    void setAudioEnabled(boolean on) {
+        prefs.edit().putBoolean("audio", on).apply();
+        if (audio != null) audio.setEnabled(on);
+    }
+
+    /** 퀘스트가 H.265 를 풀 수 있는지 알려 옴 → 지원하면 H.265 로 다시 시작 (같은 비트레이트에서 더 선명) */
+    void onPeerCapsChanged() {
+        restartEncoder();
+    }
+
     /** 퀘스트가 키프레임을 요청 (메인 스레드) */
     void onKeyframeRequest() {
         byte[] cfg = lastConfig;
-        if (cfg != null) hub.send(Proto.VIDEO_CONFIG, configPayload(frameW, frameH, cfg));
+        if (cfg != null) hub.send(Proto.VIDEO_CONFIG, configPayload(frameW, frameH, codecId, cfg));
+        if (audio != null) audio.resendConfig();
         lastKeyRequest = 0;
         requestSyncFrame();
     }
@@ -244,13 +272,13 @@ public final class MirrorService extends Service {
 
     // ── 인코더 ──
 
-    /** 써 볼 H.264 인코더 이름들 (하드웨어 먼저, 소프트웨어는 마지막) */
-    private static List<String> encoderNames() {
+    /** 써 볼 인코더 이름들 (하드웨어 먼저, 소프트웨어는 마지막) */
+    private static List<String> encoderNames(String mime) {
         List<String> hw = new ArrayList<>(), sw = new ArrayList<>();
         for (MediaCodecInfo info : new MediaCodecList(MediaCodecList.REGULAR_CODECS).getCodecInfos()) {
             if (!info.isEncoder()) continue;
             boolean avc = false;
-            for (String t : info.getSupportedTypes()) if (t.equalsIgnoreCase(MediaFormat.MIMETYPE_VIDEO_AVC)) avc = true;
+            for (String t : info.getSupportedTypes()) if (t.equalsIgnoreCase(mime)) avc = true;
             if (!avc) continue;
             String n = info.getName();
             boolean soft = Build.VERSION.SDK_INT >= 29 ? info.isSoftwareOnly()
@@ -264,9 +292,16 @@ public final class MirrorService extends Service {
     private void restartEncoder() {
         stopCodec();
         if (projection == null || !hub.isReady()) return;
-        boolean usb = hub.usbActive();
+        int kind = hub.kind();
+        boolean usb = kind == Hub.KIND_USB;
         int level = prefs.getInt("quality", 1);
-        int[][] table = usb ? USB_PROFILES : BLE_PROFILES;
+        int[][] table = usb ? USB_PROFILES : kind == Hub.KIND_FAST ? FAST_PROFILES : BLE_PROFILES;
+        // 퀘스트가 H.265 를 풀 수 있으면 H.265 먼저 (같은 데이터량에서 더 선명), 안 되면 H.264
+        List<String[]> candidates = new ArrayList<>();
+        if (PhoneController.get(this).peerHevc) {
+            for (String n : encoderNames(MediaFormat.MIMETYPE_VIDEO_HEVC)) candidates.add(new String[]{n, MediaFormat.MIMETYPE_VIDEO_HEVC});
+        }
+        for (String n : encoderNames(MediaFormat.MIMETYPE_VIDEO_AVC)) candidates.add(new String[]{n, MediaFormat.MIMETYPE_VIDEO_AVC});
         Point real = realSize();
         captureFor = real;
 
@@ -274,9 +309,10 @@ public final class MirrorService extends Service {
         MediaCodec c = null;
         int w = 0, h = 0;
         int[] profile = null;
-        String chosen = null;
+        String chosen = null, chosenMime = null;
         outer:
-        for (String name : encoderNames()) {
+        for (String[] cand : candidates) {
+            String name = cand[0], mime = cand[1];
             if (badEncoders.contains(name)) continue;
             for (int lv = level; lv >= 0; lv--) {
                 profile = table[lv];
@@ -284,9 +320,10 @@ public final class MirrorService extends Service {
                 w = size[0];
                 h = size[1];
                 for (boolean tuned : new boolean[]{true, false}) {
-                    c = createEncoder(name, w, h, profile[1], profile[2], usb, tuned);
+                    c = createEncoder(name, mime, w, h, profile[1], profile[2], usb, tuned);
                     if (c != null) {
                         chosen = name;
+                        chosenMime = mime;
                         break outer;
                     }
                 }
@@ -311,6 +348,7 @@ public final class MirrorService extends Service {
         }
         frameW = w;
         frameH = h;
+        codecId = MediaFormat.MIMETYPE_VIDEO_HEVC.equals(chosenMime) ? Proto.CODEC_HEVC : Proto.CODEC_AVC;
         try {
             if (virtualDisplay == null) {
                 virtualDisplay = projection.createVirtualDisplay("QPBridge", w, h, densityDpi(),
@@ -336,8 +374,8 @@ public final class MirrorService extends Service {
         drainThread = new Thread(() -> drainLoop(runCodec, fw, fh), "encoder");
         drainThread.start();
         currentEncoder = chosen;
-        hub.log("화면 전송 시작: " + w + "×" + h + ", " + (profile[1] / 1000) + "kbps, " + (usb ? "USB" : "블루투스")
-                + ", 인코더 " + chosen);
+        hub.log("화면 전송 시작: " + w + "×" + h + ", " + (codecId == Proto.CODEC_HEVC ? "H.265" : "H.264") + ", 최대 "
+                + (profile[1] / 1000) + "kbps, " + profile[2] + "fps, " + hub.active().label() + ", 인코더 " + chosen);
         // 5초 안에 영상이 하나도 안 나오면 다른 인코더로
         final MediaCodec watch = c;
         main.postDelayed(() -> {
@@ -389,7 +427,10 @@ public final class MirrorService extends Service {
                     }
                 }
                 if (++tick % 2 == 0) {
-                    hub.send(Proto.STATS, Proto.utf8((usbMode ? "USB" : "블루투스") + " " + (linkRate / 8 / 1024) + "KB/s · 영상 "
+                    Link al = hub.active();
+                    hub.send(Proto.STATS, Proto.utf8((al == null ? "-" : al.label()) + " " + (linkRate / 8 / 1024) + "KB/s · "
+                            + (codecId == Proto.CODEC_HEVC ? "H.265 " : "H.264 ")
+                            + (audio != null && audio.isSending() ? "· 소리 켜짐 · " : "· ") + "영상 "
                             + (videoBps / 1000) + "kbps(목표 " + (currentBitrate / 1000) + ") · " + frameW + "×" + frameH
                             + " · 보낸 프레임 " + framesOut.get()));
                 }
@@ -414,16 +455,16 @@ public final class MirrorService extends Service {
         return new int[]{w, h};
     }
 
-    private MediaCodec createEncoder(String name, int w, int h, int bitrate, int fps, boolean usb, boolean tuned) {
+    private MediaCodec createEncoder(String name, String mime, int w, int h, int bitrate, int fps, boolean usb, boolean tuned) {
         MediaCodec c = null;
         try {
             c = MediaCodec.createByCodecName(name);
-            MediaCodecInfo.CodecCapabilities caps = c.getCodecInfo().getCapabilitiesForType(MediaFormat.MIMETYPE_VIDEO_AVC);
+            MediaCodecInfo.CodecCapabilities caps = c.getCodecInfo().getCapabilitiesForType(mime);
             if (!caps.getVideoCapabilities().isSizeSupported(w, h)) {
                 c.release();
                 return null;
             }
-            MediaFormat f = MediaFormat.createVideoFormat(MediaFormat.MIMETYPE_VIDEO_AVC, w, h);
+            MediaFormat f = MediaFormat.createVideoFormat(mime, w, h);
             f.setInteger(MediaFormat.KEY_COLOR_FORMAT, MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface);
             f.setInteger(MediaFormat.KEY_BIT_RATE, bitrate);
             f.setInteger(MediaFormat.KEY_FRAME_RATE, fps);
@@ -434,6 +475,17 @@ public final class MirrorService extends Service {
                 if (Build.VERSION.SDK_INT >= 29) {
                     f.setFloat(MediaFormat.KEY_MAX_FPS_TO_ENCODER, fps);
                     f.setInteger(MediaFormat.KEY_MAX_B_FRAMES, 0);
+                }
+                if (MediaFormat.MIMETYPE_VIDEO_AVC.equals(mime)) {
+                    // H.264 High 프로필: Baseline 보다 같은 데이터량에서 더 선명
+                    int bestLevel = 0;
+                    for (MediaCodecInfo.CodecProfileLevel pl : caps.profileLevels) {
+                        if (pl.profile == MediaCodecInfo.CodecProfileLevel.AVCProfileHigh) bestLevel = Math.max(bestLevel, pl.level);
+                    }
+                    if (bestLevel > 0) {
+                        f.setInteger(MediaFormat.KEY_PROFILE, MediaCodecInfo.CodecProfileLevel.AVCProfileHigh);
+                        f.setInteger(MediaFormat.KEY_LEVEL, bestLevel);
+                    }
                 }
                 if (caps.getEncoderCapabilities().isBitrateModeSupported(MediaCodecInfo.EncoderCapabilities.BITRATE_MODE_CBR)) {
                     f.setInteger(MediaFormat.KEY_BITRATE_MODE, MediaCodecInfo.EncoderCapabilities.BITRATE_MODE_CBR);
@@ -473,7 +525,7 @@ public final class MirrorService extends Service {
 
     private void requestSyncFrame() {
         long now = SystemClock.elapsedRealtime();
-        if (now - lastKeyRequest < (hub.usbActive() ? 500 : 2000)) return;
+        if (now - lastKeyRequest < (hub.kind() == Hub.KIND_BLE ? 2000 : 700)) return;
         lastKeyRequest = now;
         MediaCodec c = codec;
         if (c == null) return;
@@ -485,9 +537,9 @@ public final class MirrorService extends Service {
         }
     }
 
-    static byte[] configPayload(int w, int h, byte[] csd) {
-        ByteBuffer b = ByteBuffer.allocate(8 + csd.length);
-        b.putInt(w).putInt(h).put(csd);
+    static byte[] configPayload(int w, int h, byte codec, byte[] csd) {
+        ByteBuffer b = ByteBuffer.allocate(9 + csd.length);
+        b.putInt(w).putInt(h).put(codec).put(csd);
         return b.array();
     }
 
@@ -521,7 +573,7 @@ public final class MirrorService extends Service {
 
             if ((info.flags & MediaCodec.BUFFER_FLAG_CODEC_CONFIG) != 0) {
                 lastConfig = data;
-                hub.send(Proto.VIDEO_CONFIG, configPayload(w, h, data));
+                hub.send(Proto.VIDEO_CONFIG, configPayload(w, h, codecId, data));
                 continue;
             }
             framesOut.incrementAndGet();

@@ -21,6 +21,7 @@ public final class Proto {
     public static final UUID SERVICE = UUID.fromString("7a3e0001-8c5b-4f1e-9d2a-51c0b7e4a9f3");
     public static final UUID RX = UUID.fromString("7a3e0002-8c5b-4f1e-9d2a-51c0b7e4a9f3"); // 퀘스트 → 폰 (Write)
     public static final UUID TX = UUID.fromString("7a3e0003-8c5b-4f1e-9d2a-51c0b7e4a9f3"); // 폰 → 퀘스트 (Notify)
+    public static final UUID PSM = UUID.fromString("7a3e0004-8c5b-4f1e-9d2a-51c0b7e4a9f3"); // 고속(L2CAP) 채널 번호 (Read)
     public static final UUID CCCD = UUID.fromString("00002902-0000-1000-8000-00805f9b34fb");
     public static final int MANUFACTURER_ID = 0xFFFF;
     public static final byte[] MAGIC = {'Q', 'P'};
@@ -36,16 +37,28 @@ public final class Proto {
     public static final byte STATUS = 0x04;           // 폰 상태 안내 (UTF-8)
     public static final byte LOG = 0x05;              // 폰 기록 한 줄 (UTF-8) → 퀘스트 기록창에 표시
     public static final byte STATS = 0x06;            // 폰 전송 상태 한 줄 (UTF-8)
-    public static final byte VIDEO_CONFIG = 0x10;     // int 폭, int 높이, H.264 SPS/PPS
+    public static final byte CAPS = 0x07;             // 퀘스트가 풀 수 있는 영상 형식: byte 비트(CAP_HEVC)
+    public static final byte VIDEO_CONFIG = 0x10;     // int 폭, int 높이, byte 코덱(0 H.264, 1 H.265), SPS/PPS(/VPS)
     public static final byte VIDEO_FRAME = 0x11;      // byte 플래그(bit0 키프레임), H.264 데이터
     public static final byte REQUEST_KEYFRAME = 0x12; // (없음)
     public static final byte SET_QUALITY = 0x13;      // byte 0~2
+    public static final byte AUDIO_CONFIG = 0x14;     // int 샘플레이트, byte 채널 수, AAC AudioSpecificConfig
+    public static final byte AUDIO_FRAME = 0x15;      // AAC 프레임
+    public static final byte SET_AUDIO = 0x16;        // byte 1 켜기 / 0 끄기
     public static final byte GESTURE = 0x20;          // int 지속시간(ms), short 점 개수, (u16 x, u16 y)* 0~65535 정규화
     public static final byte GLOBAL = 0x21;           // byte AccessibilityService.GLOBAL_ACTION_*
     public static final byte TEXT = 0x22;             // UTF-8 (입력칸에 이어 쓰기)
     public static final byte BACKSPACE = 0x23;        // (없음)
 
     public static final int MAX_MESSAGE = 4 * 1024 * 1024;
+
+    public static final int CAP_HEVC = 1;
+    public static final byte CODEC_AVC = 0, CODEC_HEVC = 1;
+
+    /** 영상은 큰 데이터라 뒤로, 나머지(소리·조작·상태)는 먼저 보냄 */
+    public static boolean isBulk(byte type) {
+        return type == VIDEO_FRAME || type == VIDEO_CONFIG;
+    }
 
     public static byte[] utf8(String s) {
         return (s == null ? "" : s).getBytes(StandardCharsets.UTF_8);

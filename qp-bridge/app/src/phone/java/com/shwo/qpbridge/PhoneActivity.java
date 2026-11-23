@@ -132,6 +132,10 @@ public class PhoneActivity extends Activity implements Hub.Listener {
 
     @Override
     public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
+        if (requestCode == REQ_AUDIO) {
+            launchCapture(); // 허용 여부와 상관없이 화면 공유는 진행
+            return;
+        }
         if (requestCode != REQ_PERMS) return;
         boolean btOk = Build.VERSION.SDK_INT < 31
                 || (checkSelfPermission(Manifest.permission.BLUETOOTH_ADVERTISE) == PackageManager.PERMISSION_GRANTED
@@ -146,7 +150,21 @@ public class PhoneActivity extends Activity implements Hub.Listener {
 
     // ── 화면 공유 ──
 
+    private static final int REQ_AUDIO = 4;
+
     private void startCapture() {
+        // 소리 전달에 '녹음' 권한이 필요 (앱 소리만 받고 마이크는 쓰지 않음). 거절해도 화면은 공유됨
+        if (Build.VERSION.SDK_INT >= 29 && checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED
+                && !getSharedPreferences("qpbridge", MODE_PRIVATE).getBoolean("askedAudio", false)) {
+            getSharedPreferences("qpbridge", MODE_PRIVATE).edit().putBoolean("askedAudio", true).apply();
+            hub.log("휴대폰 소리를 퀘스트로 보내려면 '녹음' 권한을 허용하세요. (마이크 소리는 쓰지 않고 앱 소리만 보냅니다)");
+            requestPermissions(new String[]{Manifest.permission.RECORD_AUDIO}, REQ_AUDIO);
+            return;
+        }
+        launchCapture();
+    }
+
+    private void launchCapture() {
         MediaProjectionManager mpm = (MediaProjectionManager) getSystemService(MEDIA_PROJECTION_SERVICE);
         startActivityForResult(mpm.createScreenCaptureIntent(), REQ_CAPTURE);
     }

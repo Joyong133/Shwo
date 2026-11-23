@@ -19,6 +19,11 @@ import android.content.Context;
 import android.content.SharedPreferences;
 import android.os.Build;
 import android.os.ParcelUuid;
+import android.bluetooth.BluetoothServerSocket;
+import android.bluetooth.BluetoothSocket;
+
+import java.io.IOException;
+import java.nio.ByteBuffer;
 
 import java.util.Arrays;
 import java.util.Locale;
@@ -36,6 +41,8 @@ public final class BlePeripheralLink extends BleLink {
     private boolean running;
     private boolean advertising;
     private final String code;
+    private BluetoothServerSocket l2capServer;
+    private volatile int psm;
 
     public BlePeripheralLink(Context ctx) {
         super(ctx);
@@ -82,10 +89,49 @@ public final class BlePeripheralLink extends BleLink {
                 BluetoothGattDescriptor.PERMISSION_READ | BluetoothGattDescriptor.PERMISSION_WRITE));
         svc.addCharacteristic(rx);
         svc.addCharacteristic(txChar);
+        // 고속 채널(L2CAP): 퀘스트가 채널 번호(PSM)를 읽어서 따로 연결
+        svc.addCharacteristic(new BluetoothGattCharacteristic(Proto.PSM,
+                BluetoothGattCharacteristic.PROPERTY_READ, BluetoothGattCharacteristic.PERMISSION_READ));
+        openL2cap();
         setState(WAITING, "블루투스 준비 중…");
         if (!server.addService(svc)) {
             log("블루투스 서비스 등록 실패");
             stop();
+        }
+    }
+
+    private void openL2cap() {
+        psm = 0;
+        if (Build.VERSION.SDK_INT < 29) return;
+        try {
+            BluetoothServerSocket ss = adapter.listenUsingInsecureL2capChannel();
+            l2capServer = ss;
+            psm = ss.getPsm();
+            new Thread(() -> {
+                while (l2capServer == ss) {
+                    try {
+                        BluetoothSocket s = ss.accept();
+                        if (socketSink != null) socketSink.onSocket(s);
+                        else s.close();
+                    } catch (IOException e) {
+                        break;
+                    }
+                }
+            }, "l2cap-accept").start();
+        } catch (IOException | SecurityException e) {
+            log("블루투스 고속 채널을 열 수 없어요 (일반 블루투스로 동작).");
+        }
+    }
+
+    private void closeL2cap() {
+        BluetoothServerSocket ss = l2capServer;
+        l2capServer = null;
+        psm = 0;
+        if (ss != null) {
+            try {
+                ss.close();
+            } catch (IOException ignored) {
+            }
         }
     }
 
@@ -249,7 +295,9 @@ public final class BlePeripheralLink extends BleLink {
                 BluetoothGattCharacteristic characteristic) {
             main.post(() -> {
                 if (server == null) return;
-                try { server.sendResponse(device, requestId, BluetoothGatt.GATT_SUCCESS, 0, new byte[0]); }
+                byte[] v = Proto.PSM.equals(characteristic.getUuid()) && offset == 0
+                        ? ByteBuffer.allocate(4).putInt(psm).array() : new byte[0];
+                try { server.sendResponse(device, requestId, BluetoothGatt.GATT_SUCCESS, 0, v); }
                 catch (SecurityException ignored) {}
             });
         }
@@ -281,6 +329,7 @@ public final class BlePeripheralLink extends BleLink {
     @Override
     public void stop() {
         running = false;
+        closeL2cap();
         stopAdvertising();
         if (server != null) {
             try {

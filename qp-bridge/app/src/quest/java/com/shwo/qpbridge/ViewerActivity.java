@@ -38,6 +38,10 @@ public class ViewerActivity extends Activity implements Hub.Listener, VideoDecod
     private Hub hub;
     private SharedPreferences prefs;
     private VideoDecoder decoder;
+    private final AudioPlayer audio = new AudioPlayer();
+    private boolean soundOn = true, panelHidden;
+    private Button soundBtn, panelBtn;
+    private View controlPanel;
     private boolean wasReady;
     private boolean hasVideo;
     private int quality;
@@ -76,7 +80,8 @@ public class ViewerActivity extends Activity implements Hub.Listener, VideoDecod
     private void updateDiagnostics() {
         String d = "영상 설정 " + decoder.configs.get() + "회 · 받은 프레임 " + decoder.received.get()
                 + " · 화면 표시 " + decoder.rendered.get() + (decoder.errors.get() > 0 ? " · 오류 " + decoder.errors.get() : "")
-                + "\n디코더 " + decoder.decoderName + (phoneStats.isEmpty() ? "" : "\n휴대폰: " + phoneStats);
+                + "\n" + decoder.codecLabel() + " · 디코더 " + decoder.decoderName
+                + " · 소리 " + (audio.isActive() ? "재생 " + audio.played.get() + (audio.dropped.get() > 0 ? " (버림 " + audio.dropped.get() + ")" : "") : "없음") + (phoneStats.isEmpty() ? "" : "\n휴대폰: " + phoneStats);
         diagText.setText(d);
         if (!hasVideo && hub.isReady() && phoneStatus.getVisibility() != View.VISIBLE) {
             overlay.setText("휴대폰 화면을 기다리는 중…\n\n" + d);
@@ -103,6 +108,24 @@ public class ViewerActivity extends Activity implements Hub.Listener, VideoDecod
         peerList = findViewById(R.id.peerList);
         textInput = findViewById(R.id.textInput);
         qualityBtns = new Button[]{findViewById(R.id.q0), findViewById(R.id.q1), findViewById(R.id.q2)};
+        soundBtn = findViewById(R.id.soundBtn);
+        panelBtn = findViewById(R.id.panelBtn);
+        controlPanel = findViewById(R.id.controlPanel);
+        soundOn = prefs.getBoolean("sound", true);
+        audio.setMuted(!soundOn);
+        soundBtn.setOnClickListener(v -> {
+            soundOn = !soundOn;
+            prefs.edit().putBoolean("sound", soundOn).apply();
+            audio.setMuted(!soundOn);
+            hub.send(Proto.SET_AUDIO, new byte[]{(byte) (soundOn ? 1 : 0)}); // 끄면 휴대폰도 안 보내서 영상에 대역폭을 더 씀
+            refreshSound();
+        });
+        panelBtn.setOnClickListener(v -> {
+            panelHidden = !panelHidden;
+            controlPanel.setVisibility(panelHidden ? View.GONE : View.VISIBLE);
+            panelBtn.setText(panelHidden ? "◨ 조작판 보이기" : "◧ 크게 보기");
+        });
+        refreshSound();
 
         hub = Hub.get(this);
         decoder = new VideoDecoder(this);
@@ -187,6 +210,7 @@ public class ViewerActivity extends Activity implements Hub.Listener, VideoDecod
         main.removeCallbacksAndMessages(null);
         hub.removeListener(this);
         decoder.reset();
+        audio.reset();
         if (isFinishing()) hub.stopAll();
         super.onDestroy();
     }
@@ -350,11 +374,15 @@ public class ViewerActivity extends Activity implements Hub.Listener, VideoDecod
     public void onHubState() {
         boolean ready = hub.isReady();
         if (ready && !wasReady) {
+            // 이 퀘스트가 풀 수 있는 형식을 먼저 알려 줌 (H.265 면 휴대폰이 H.265 로 보냄)
+            hub.send(Proto.CAPS, new byte[]{(byte) (VideoDecoder.supportsHevc() ? Proto.CAP_HEVC : 0)});
+            hub.send(Proto.SET_AUDIO, new byte[]{(byte) (soundOn ? 1 : 0)});
             hub.send(Proto.SET_QUALITY, new byte[]{(byte) quality});
             hub.send(Proto.REQUEST_KEYFRAME);
         }
         if (!ready && wasReady) {
             decoder.reset();
+            audio.reset();
             hasVideo = false;
             phoneStatus.setVisibility(View.GONE);
             latencyText.setText("");
@@ -372,6 +400,12 @@ public class ViewerActivity extends Activity implements Hub.Listener, VideoDecod
                 break;
             case Proto.VIDEO_FRAME:
                 decoder.onFrame(p);
+                break;
+            case Proto.AUDIO_CONFIG:
+                audio.onConfig(p);
+                break;
+            case Proto.AUDIO_FRAME:
+                audio.onFrame(p);
                 break;
             case Proto.PONG: {
                 long rtt = SystemClock.elapsedRealtime() - Proto.readLong(p);
@@ -461,6 +495,10 @@ public class ViewerActivity extends Activity implements Hub.Listener, VideoDecod
             else if (phoneStatus.getVisibility() != View.VISIBLE) overlay.setText("휴대폰 화면을 기다리는 중…");
         }
         refreshQuality();
+    }
+
+    private void refreshSound() {
+        soundBtn.setText(soundOn ? "🔊 소리 켜짐" : "🔇 소리 꺼짐");
     }
 
     private void refreshQuality() {

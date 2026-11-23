@@ -34,6 +34,7 @@ final class VideoDecoder {
     private final Object lock = new Object();
     private Surface surface;
     private int width, height;
+    private String mime = MediaFormat.MIMETYPE_VIDEO_AVC;
     private byte[] csd;
     private Thread thread;
     private volatile boolean running;
@@ -45,6 +46,10 @@ final class VideoDecoder {
     final AtomicInteger configs = new AtomicInteger(), received = new AtomicInteger(), rendered = new AtomicInteger(),
             errors = new AtomicInteger();
     volatile String decoderName = "-";
+
+    String codecLabel() {
+        return MediaFormat.MIMETYPE_VIDEO_HEVC.equals(mime) ? "H.265" : "H.264";
+    }
 
     VideoDecoder(Callback cb) {
         this.cb = cb;
@@ -66,13 +71,15 @@ final class VideoDecoder {
     }
 
     void onConfig(byte[] payload) {
-        if (payload.length < 9) return;
+        if (payload.length < 10) return;
         ByteBuffer b = ByteBuffer.wrap(payload);
         int w = b.getInt(), h = b.getInt();
-        byte[] c = Arrays.copyOfRange(payload, 8, payload.length);
+        String m = b.get() == Proto.CODEC_HEVC ? MediaFormat.MIMETYPE_VIDEO_HEVC : MediaFormat.MIMETYPE_VIDEO_AVC;
+        byte[] c = Arrays.copyOfRange(payload, 9, payload.length);
         configs.incrementAndGet();
         synchronized (lock) {
-            if (running && w == width && h == height && Arrays.equals(c, csd)) return; // 같은 설정 재전송
+            if (running && w == width && h == height && m.equals(mime) && Arrays.equals(c, csd)) return; // 같은 설정 재전송
+            mime = m;
             width = w;
             height = h;
             csd = c;
@@ -111,7 +118,7 @@ final class VideoDecoder {
         if (surface == null || !surface.isValid() || csd == null) return;
         // 디코더마다 (조정된 설정 → 기본 설정) 순서로 시도. 저지연 옵션을 거부하는 디코더도 있음
         MediaCodec codec = null;
-        for (String name : decoderNames()) {
+        for (String name : decoderNames(mime)) {
             if (badDecoders.contains(name)) continue;
             codec = createDecoder(name, true);
             if (codec == null) codec = createDecoder(name, false);
@@ -153,12 +160,17 @@ final class VideoDecoder {
         }
     }
 
-    private static List<String> decoderNames() {
+    /** 이 기기가 H.265 를 풀 수 있는지 */
+    static boolean supportsHevc() {
+        return !decoderNames(MediaFormat.MIMETYPE_VIDEO_HEVC).isEmpty();
+    }
+
+    private static List<String> decoderNames(String mime) {
         List<String> hw = new ArrayList<>(), sw = new ArrayList<>();
         for (MediaCodecInfo info : new MediaCodecList(MediaCodecList.REGULAR_CODECS).getCodecInfos()) {
             if (info.isEncoder()) continue;
             boolean avc = false;
-            for (String t : info.getSupportedTypes()) if (t.equalsIgnoreCase(MediaFormat.MIMETYPE_VIDEO_AVC)) avc = true;
+            for (String t : info.getSupportedTypes()) if (t.equalsIgnoreCase(mime)) avc = true;
             if (!avc) continue;
             String n = info.getName();
             if (n.endsWith(".secure")) continue;
@@ -174,11 +186,11 @@ final class VideoDecoder {
         MediaCodec c = null;
         try {
             c = MediaCodec.createByCodecName(name);
-            MediaFormat f = MediaFormat.createVideoFormat(MediaFormat.MIMETYPE_VIDEO_AVC, width, height);
+            MediaFormat f = MediaFormat.createVideoFormat(mime, width, height);
             f.setInteger(MediaFormat.KEY_MAX_INPUT_SIZE, Math.max(512 * 1024, width * height * 2));
             if (tuned) {
                 f.setInteger(MediaFormat.KEY_PRIORITY, 0);
-                if (Build.VERSION.SDK_INT >= 30 && c.getCodecInfo().getCapabilitiesForType(MediaFormat.MIMETYPE_VIDEO_AVC)
+                if (Build.VERSION.SDK_INT >= 30 && c.getCodecInfo().getCapabilitiesForType(mime)
                         .isFeatureSupported(MediaCodecInfo.CodecCapabilities.FEATURE_LowLatency)) {
                     f.setInteger(MediaFormat.KEY_LOW_LATENCY, 1);
                 }

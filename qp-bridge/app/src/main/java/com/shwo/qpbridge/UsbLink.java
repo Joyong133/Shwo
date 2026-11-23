@@ -23,7 +23,6 @@ import java.util.HashSet;
 import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.concurrent.LinkedBlockingQueue;
 
 /**
  * USB 케이블 연결 (Android Open Accessory).
@@ -50,7 +49,7 @@ public final class UsbLink extends Link {
     private final String permissionAction;
     private final ExecutorService control = Executors.newSingleThreadExecutor();
     private final Set<String> asked = new HashSet<>();
-    private final LinkedBlockingQueue<byte[]> outQueue = new LinkedBlockingQueue<>();
+    private final Outbox outQueue = new Outbox();
     private volatile Io io;
     private Thread reader, writer;
     private boolean started;
@@ -433,7 +432,7 @@ public final class UsbLink extends Link {
         if (io == null || state != READY) return false;
         byte[] frame = FrameParser.frame(type, payload);
         pending.addAndGet(frame.length);
-        outQueue.offer(frame);
+        outQueue.put(frame, !Proto.isBulk(type));
         return true;
     }
 }

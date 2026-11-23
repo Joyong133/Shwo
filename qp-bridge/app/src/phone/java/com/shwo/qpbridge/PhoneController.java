@@ -24,6 +24,8 @@ final class PhoneController implements Hub.Listener {
     private final Hub hub;
     private final Handler main = new Handler(Looper.getMainLooper());
     private boolean wasReady;
+    /** 퀘스트가 H.265 를 풀 수 있음 */
+    volatile boolean peerHevc;
 
     private PhoneController(Context ctx) {
         this.ctx = ctx;
@@ -83,6 +85,20 @@ final class PhoneController implements Hub.Listener {
                 if (p.length > 0) {
                     if (s != null) s.setQuality(p[0]); // 저장도 여기서 함
                     else ctx.getSharedPreferences("qpbridge", Context.MODE_PRIVATE).edit().putInt("quality", p[0]).apply();
+                }
+                break;
+            case Proto.CAPS: {
+                boolean hevc = p.length > 0 && (p[0] & Proto.CAP_HEVC) != 0;
+                if (hevc != peerHevc) {
+                    peerHevc = hevc;
+                    if (s != null) s.onPeerCapsChanged();
+                }
+                break;
+            }
+            case Proto.SET_AUDIO:
+                if (p.length > 0) {
+                    if (s != null) s.setAudioEnabled(p[0] != 0);
+                    else ctx.getSharedPreferences("qpbridge", Context.MODE_PRIVATE).edit().putBoolean("audio", p[0] != 0).apply();
                 }
                 break;
             case Proto.GESTURE:
