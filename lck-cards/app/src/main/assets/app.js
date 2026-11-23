@@ -37,7 +37,8 @@
     const tier = TIERS.find((t) => ovr >= t.min);
     return { base: Math.round(base * 10) / 10, bonus: Math.round(bonus * 10) / 10, ovr, stars, tier };
   }
-  const players = window.PLAYERS.map((p, i) => ({ ...p, id: p.ign.toLowerCase(), idx: i, ...compute(p) }));
+  const META = window.PLAYER_META || {};
+  const players = window.PLAYERS.map((p, i) => ({ ...p, ...(META[p.ign] || {}), id: p.ign.toLowerCase().replace(/\s+/g, ''), idx: i, ...compute(p) }));
   const byId = Object.fromEntries(players.map((p) => [p.id, p]));
 
   // ───── 유틸 ─────
@@ -45,13 +46,15 @@
   const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const team = (p) => TEAMS[p.team] || { name: p.team, color: '#888', color2: '#111' };
 
+  const STAR_PATH = 'M12 1.8l3.1 6.6 7.2.8-5.4 4.9 1.5 7.1L12 17.6l-6.4 3.6 1.5-7.1L1.7 9.2l7.2-.8z';
   function starsHtml(n) {
     let h = '';
     for (let i = 1; i <= 5; i++) {
-      const cls = n >= i ? 'full' : n >= i - 0.5 ? 'half' : 'empty';
-      h += `<span class="star ${cls}">★</span>`;
+      const pct = n >= i ? 100 : n >= i - 0.5 ? 50 : 0;
+      h += `<span class="star"><svg viewBox="0 0 24 24"><path d="${STAR_PATH}"/></svg>` +
+        (pct ? `<span class="fill" style="width:${pct}%"><svg viewBox="0 0 24 24"><path d="${STAR_PATH}"/></svg></span>` : '') + '</span>';
     }
-    return `<span class="stars" aria-label="별 ${n}개">${h}</span>`;
+    return `<span class="stars" role="img" aria-label="별 ${n}개">${h}</span>`;
   }
 
   const POS_ICON = {
@@ -84,6 +87,8 @@
     </svg>`;
   }
 
+  window.__avatar = (id) => avatar(byId[id]);
+
   function cardHtml(p, big = false) {
     const t = team(p);
     const stats = p.s.map((v, i) => `<div class="st"><b>${v}</b><span>${STAT_SHORT[i]}</span></div>`).join('');
@@ -94,7 +99,9 @@
           <div class="ovr"><b>${p.ovr}</b><span>${p.pos}</span>${posIcon(p.pos)}</div>
           <div class="tags"><div class="tier-tag">${p.tier.label}</div><div class="status-tag s-${p.status}">${STATUS[p.status]}</div></div>
         </div>
-        <div class="avatar-wrap">${avatar(p)}</div>
+        <div class="avatar-wrap">${p.img
+          ? `<img class="photo${p.opaque ? ' opaque' : ''}" src="${p.img}" alt="${esc(p.ign)}" loading="lazy" decoding="async" onerror="this.replaceWith(document.createRange().createContextualFragment(window.__avatar('${p.id}')))">`
+          : avatar(p)}</div>
         <div class="card-name">
           <h3>${esc(p.ign)}</h3>
           <p>${esc(p.name || p.nick)} · <span class="team-chip">${esc(t.name)}</span></p>
@@ -206,8 +213,15 @@
         <ul class="hl">${p.hl.map((h) => `<li>${esc(h)}</li>`).join('')}</ul>
         <h3>소속 이력</h3>
         <p class="teams">${esc(p.teams)}</p>
+        ${nowLine(p)}
       </section>
       <p class="disclaimer">능력치는 커리어 전성기 기량을 바탕으로 한 팬 메이드 평가입니다.</p>`;
+  }
+
+  function nowLine(p) {
+    if (!p.now) return '';
+    if (p.status === 'retired' && p.now === '소속팀 없음(FA)') return '';
+    return `<div class="now"><span>2026년 11월 현재 (2027 이적 시장)</span><b>${esc(p.now)}</b></div>`;
   }
 
   let current = null;

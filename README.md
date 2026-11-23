@@ -64,5 +64,5 @@ Meta Quest 용 APK(`busan-vr/release/`)와 웹 빌드(`busan/` → GitHub Pages 
 
 ## LCK 선수 카드 도감 (`lck-cards/`)
 
-LCK 현역·은퇴 선수 85명을 카드로 보여 주는 안드로이드 앱입니다. 설치 파일은 `lck-cards/release/lck-cards.apk`,
+LCK 현역·은퇴 선수 115명을 실제 사진 카드로 보여 주는 안드로이드 앱입니다. 설치 파일은 `lck-cards/release/lck-cards.apk`,
 자세한 내용은 [`lck-cards/README.md`](lck-cards/README.md) 를 참고하세요.

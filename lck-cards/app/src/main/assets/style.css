@@ -123,7 +123,16 @@ main { padding: 10px 12px calc(96px + var(--safe-bot)); max-width: 1100px; margi
 .tier-icon .tier-tag { color: #ffe6a0; }
 .status-tag { font-size: 5.6cqw; font-weight: 700; padding: 2px 6px; border-radius: 5px; background: rgba(0, 0, 0, .5); }
 .s-active { color: #6ef0a8; } .s-former { color: #8fc4ff; } .s-retired { color: #c3c3c3; }
-.avatar-wrap { flex: 1; min-height: 0; display: flex; align-items: flex-end; justify-content: center; position: relative; z-index: 1; }
+.avatar-wrap { flex: 1; min-height: 0; display: flex; align-items: flex-end; justify-content: center; position: relative; z-index: 1; padding-top: 6%; margin-bottom: -2%; }
+.photo {
+  height: 100%; max-width: 92%; object-fit: contain; object-position: bottom center;
+  -webkit-mask-image: linear-gradient(180deg, #000 72%, transparent 100%); mask-image: linear-gradient(180deg, #000 72%, transparent 100%);
+  filter: drop-shadow(0 4px 10px rgba(0, 0, 0, .45));
+}
+.photo.opaque {
+  height: 80%; aspect-ratio: 1; object-fit: cover; object-position: top center; border-radius: 50%;
+  -webkit-mask-image: none; mask-image: none; border: 2px solid var(--frame1);
+}
 .avatar { width: 44%; filter: drop-shadow(0 6px 12px rgba(0, 0, 0, .55)); }
 .avatar-ring { stroke: var(--frame1); }
 .tier-icon .avatar-ring { stroke: #ffe6a0; }
@@ -131,10 +140,11 @@ main { padding: 10px 12px calc(96px + var(--safe-bot)); max-width: 1100px; margi
 .card-name h3 { margin: 0; font-size: 12.5cqw; font-weight: 900; letter-spacing: -.3px; line-height: 1.05; word-break: break-all; }
 .card-name p { margin: 2px 0 1px; font-size: 6.4cqw; color: #c9cfdd; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .team-chip { color: var(--tc); font-weight: 700; filter: brightness(1.25); }
-.stars { display: inline-flex; gap: 1px; font-size: 9cqw; line-height: 1; }
-.star { position: relative; color: rgba(255, 255, 255, .18); }
-.star.full { color: #ffd45a; text-shadow: 0 0 6px rgba(255, 200, 60, .55); }
-.star.half { background: linear-gradient(90deg, #ffd45a 50%, rgba(255, 255, 255, .18) 50%); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.stars { display: inline-flex; gap: 1px; font-size: 9cqw; line-height: 1; vertical-align: middle; }
+.star { position: relative; display: inline-block; width: 1em; height: 1em; flex: none; }
+.star svg { display: block; width: 1em; height: 1em; fill: rgba(255, 255, 255, .18); }
+.star .fill { position: absolute; left: 0; top: 0; height: 100%; overflow: hidden; }
+.star .fill svg { fill: #ffd45a; filter: drop-shadow(0 0 3px rgba(255, 200, 60, .55)); }
 .card-stats {
   display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px; margin: 4% 6% 7%;
   background: rgba(255, 255, 255, .12); border-radius: 8px; overflow: hidden; position: relative; z-index: 2;
@@ -203,6 +213,9 @@ main { padding: 10px 12px calc(96px + var(--safe-bot)); max-width: 1100px; margi
 .hl { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 6px; }
 .hl li::marker { color: var(--accent); }
 .teams { margin: 0; color: #c9cfdd; }
+.now { margin-top: 12px; padding: 10px 12px; border-radius: 12px; background: var(--bg2); display: flex; flex-direction: column; gap: 2px; }
+.now span { font-size: 11px; color: var(--muted); }
+.now b { font-size: 14px; }
 .disclaimer { color: var(--muted); font-size: 11px; text-align: center; margin-top: 10px; }
 
 /* ───── 카드 뽑기 ───── */
