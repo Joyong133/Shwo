@@ -2,7 +2,7 @@
 // s: [라인전, 한타, 운영, 피지컬, 챔프폭, 안정감]  — 커리어 전성기 기량을 바탕으로 한 팬 평가(공식 수치 아님)
 // w: 롤드컵(월즈) 우승 횟수, m: MSI 우승 횟수  → 종합 능력치 보너스에 반영
 // status: active(2026 LCK 현역) | former(LCK를 떠남: 해외·병역·휴식 등) | retired(은퇴)
-window.ROSTER_SEASON = '2026 LCK 정규 시즌';
+window.ROSTER_SEASON = '2026 시즌';
 
 window.TEAMS = {
   T1:    { name: 'T1',              color: '#E4002B', color2: '#1a0006' },

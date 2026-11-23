@@ -26,6 +26,8 @@
     { min: 0, key: 'common', label: 'NORMAL' },
   ];
   const STATUS = { active: '현역', former: '전 LCK', retired: '은퇴' };
+  const LEAGUES = ['LCK', 'LPL', 'LEC', 'LCS'];
+  const statusLabel = (p) => p.status === 'former' ? (p.league === 'LCK' ? '전 LCK' : '전 ' + p.league) : STATUS[p.status];
 
   // ───── 종합 능력치 · 별 등급 계산 ─────
   function compute(p) {
@@ -38,7 +40,14 @@
     return { base: Math.round(base * 10) / 10, bonus: Math.round(bonus * 10) / 10, ovr, stars, tier };
   }
   const META = window.PLAYER_META || {};
-  const players = window.PLAYERS.map((p, i) => ({ ...p, ...(META[p.ign] || {}), id: p.ign.toLowerCase().replace(/\s+/g, ''), idx: i, ...compute(p) }));
+  const seen = new Set();
+  const players = window.PLAYERS.map((p, i) => {
+    let id = p.id || p.ign.toLowerCase().replace(/[^a-z0-9가-힣]+/g, '');
+    while (seen.has(id)) id += '_';
+    seen.add(id);
+    const rec = p.rec || (p.key ? null : (window.PLAYER_REC || {})[p.ign]) || null;
+    return { league: 'LCK', ...p, ...(p.key ? {} : META[p.ign] || {}), rec, id, idx: i, ...compute(p) };
+  });
   const byId = Object.fromEntries(players.map((p) => [p.id, p]));
 
   // ───── 유틸 ─────
@@ -97,14 +106,14 @@
         <div class="shine"></div>
         <div class="card-top">
           <div class="ovr"><b>${p.ovr}</b><span>${p.pos}</span>${posIcon(p.pos)}</div>
-          <div class="tags"><div class="tier-tag">${p.tier.label}</div><div class="status-tag s-${p.status}">${STATUS[p.status]}</div></div>
+          <div class="tags"><div class="tier-tag">${p.tier.label}</div><div class="status-tag s-${p.status}">${p.league} · ${statusLabel(p)}</div></div>
         </div>
         <div class="avatar-wrap">${p.img
           ? `<img class="photo${p.opaque ? ' opaque' : ''}" src="${p.img}" alt="${esc(p.ign)}" loading="lazy" decoding="async" onerror="this.replaceWith(document.createRange().createContextualFragment(window.__avatar('${p.id}')))">`
           : avatar(p)}</div>
         <div class="card-name">
           <h3>${esc(p.ign)}</h3>
-          <p>${esc(p.name || p.nick)} · <span class="team-chip">${esc(t.name)}</span></p>
+          <p>${p.name || p.nick ? esc(p.name || p.nick) + ' · ' : ''}<span class="team-chip">${esc(t.name)}</span></p>
           ${starsHtml(p.stars)}
         </div>
         <div class="card-stats">${stats}</div>
@@ -113,7 +122,7 @@
   }
 
   // ───── 필터 상태 ─────
-  const state = { status: 'all', pos: 'ALL', team: 'ALL', sort: 'ovr', q: '' };
+  const state = { status: 'all', league: 'ALL', pos: 'ALL', team: 'ALL', sort: 'ovr', q: '' };
   let list = [];
 
   function applyFilters() {
@@ -121,10 +130,11 @@
     list = players.filter((p) => {
       if (state.status === 'active' && p.status !== 'active') return false;
       if (state.status === 'legend' && p.status === 'active') return false;
+      if (state.league !== 'ALL' && p.league !== state.league) return false;
       if (state.pos !== 'ALL' && p.pos !== state.pos) return false;
       if (state.team !== 'ALL' && team(p).name !== state.team) return false;
       if (q) {
-        const hay = [p.ign, p.name, p.nick, team(p).name, p.teams, POS[p.pos].ko].join(' ').toLowerCase();
+        const hay = [p.ign, p.name, p.nick, team(p).name, p.teams, POS[p.pos].ko, p.league, (p.rec && p.rec.champs || []).join(' ')].join(' ').toLowerCase();
         if (!hay.includes(q)) return false;
       }
       return true;
@@ -132,18 +142,32 @@
     const cmp = {
       ovr: (a, b) => b.ovr - a.ovr || b.base - a.base || a.ign.localeCompare(b.ign),
       name: (a, b) => a.ign.localeCompare(b.ign, 'en', { sensitivity: 'base' }),
-      team: (a, b) => team(a).name.localeCompare(team(b).name, 'ko') || POS[a.pos].order - POS[b.pos].order,
+      team: (a, b) => LEAGUES.indexOf(a.league) - LEAGUES.indexOf(b.league) || team(a).name.localeCompare(team(b).name, 'ko') || POS[a.pos].order - POS[b.pos].order,
       pos: (a, b) => POS[a.pos].order - POS[b.pos].order || b.ovr - a.ovr,
     }[state.sort];
     list.sort(cmp);
     render();
   }
 
+  // 카드가 많으므로 화면 아래에 가까워질 때 60장씩 이어서 그린다
+  const CHUNK = 60;
+  let shown = 0;
+  function renderMore() {
+    if (shown >= list.length) return;
+    const next = list.slice(shown, shown + CHUNK);
+    $('#grid').insertAdjacentHTML('beforeend', next.map((p) => cardHtml(p)).join(''));
+    shown += next.length;
+  }
   function render() {
-    $('#grid').innerHTML = list.map((p) => cardHtml(p)).join('');
+    $('#grid').innerHTML = '';
+    shown = 0;
+    renderMore();
     $('#count').textContent = `${list.length}명의 선수`;
     $('#empty').hidden = list.length > 0;
   }
+  window.addEventListener('scroll', () => {
+    if (window.innerHeight + window.scrollY > document.body.scrollHeight - 1200) renderMore();
+  }, { passive: true });
 
   // ───── 상세 화면 ─────
   function radar(p) {
@@ -185,7 +209,7 @@
       <div class="detail-card">${cardHtml(p, true)}</div>
       <section class="panel head-panel">
         <h2>${esc(p.ign)} <small>${esc(p.name)}</small></h2>
-        <p class="meta">${posIcon(p.pos, 'inline')} ${POS[p.pos].ko} · <span style="color:${t.color}">${esc(t.name)}</span> · ${STATUS[p.status]}</p>
+        <p class="meta">${posIcon(p.pos, 'inline')} ${POS[p.pos].ko} · <span style="color:${t.color}">${esc(t.name)}</span> · ${p.league} · ${statusLabel(p)}</p>
         <div class="summary">
           <div><b>${p.ovr}</b><span>종합</span></div>
           <div>${starsHtml(p.stars)}<span>${p.stars}성 · ${p.tier.label}</span></div>
@@ -196,12 +220,13 @@
       <section class="panel">
         <h3>선수 소개</h3>
         <p class="desc">${esc(p.desc)}</p>
-        <p class="tagline">주무기: <b>${STAT_NAMES[best]}</b> · 별명 <b>${esc(p.nick)}</b></p>
+        <p class="tagline">주무기: <b>${STAT_NAMES[best]}</b>${p.nick ? ` · 별명 <b>${esc(p.nick)}</b>` : ''}</p>
       </section>
       <section class="panel">
         <h3>능력치</h3>
         ${radar(p)}
         <div class="bars">${bars}</div>
+        ${recHtml(p)}
         <div class="calc">
           <div><span>포지션 가중 평균</span><b>${p.base.toFixed(1)}</b></div>
           <div><span>국제대회 보너스 (롤드컵 ${p.w}회 · MSI ${p.m}회)</span><b>+${p.bonus.toFixed(1)}</b></div>
@@ -215,7 +240,19 @@
         <p class="teams">${esc(p.teams)}</p>
         ${nowLine(p)}
       </section>
-      <p class="disclaimer">능력치는 커리어 전성기 기량을 바탕으로 한 팬 메이드 평가입니다.</p>`;
+      <p class="disclaimer">${p.auto && p.rec ? `능력치는 Leaguepedia 경기 기록(${esc(p.rec.label)})을 포지션별 백분위로 환산해 자동 산출했습니다.` : '능력치는 커리어 전성기 기량을 바탕으로 한 팬 메이드 평가입니다.'}</p>`;
+  }
+
+  function recHtml(p) {
+    const r = p.rec;
+    if (!r) return '';
+    const cell = (v, l) => `<div><b>${v == null || /^(null|undefined)/.test(String(v)) ? '-' : v}</b><span>${l}</span></div>`;
+    return `<h3 class="rec-h">${esc(r.label)}</h3>
+      <div class="rec">
+        ${cell(r.g, '경기')}${cell(r.w + '-' + (r.g - r.w), '승-패')}${cell(r.wr + '%', '승률')}${cell(r.kda, 'KDA')}
+        ${cell(r.kp + '%', '킬 관여')}${cell(r.cspm, '분당 CS')}${cell(r.dmg + '%', '딜 비중')}${cell(r.vspm, '분당 시야')}
+      </div>
+      ${r.champs && r.champs.length ? `<p class="champs">주력 챔피언 · <b>${r.champs.map(esc).join(' · ')}</b></p>` : ''}`;
   }
 
   function nowLine(p) {
@@ -271,7 +308,7 @@
     let r = Math.random() * total;
     packPick = players.find((p) => (r -= weight[p.tier.key]) < 0) || players[0];
     $('#packStage').innerHTML = `<div class="flip">
-        <div class="flip-back"><div class="cb-logo">LCK</div><div class="cb-sub">PLAYER CARD</div></div>
+        <div class="flip-back"><div class="cb-logo">LoL</div><div class="cb-sub">PLAYER CARD</div></div>
         <div class="flip-front">${cardHtml(packPick, true)}</div>
       </div><p class="pack-result tier-text-${packPick.tier.key}">${packPick.tier.label} · ${packPick.stars}성</p>`;
     $('#pack').hidden = false;
@@ -294,10 +331,25 @@
 
   // ───── 이벤트 ─────
   function initUI() {
-    $('#season').textContent = `현역 ${players.filter((p) => p.status === 'active').length}명 · 은퇴/전 LCK ${players.filter((p) => p.status !== 'active').length}명 · ${window.ROSTER_SEASON} 기준`;
+    $('#season').textContent = `${players.length}명 · ` + LEAGUES.map((l) => `${l} ${players.filter((p) => p.league === l).length}`).join(' · ') + ` · ${window.ROSTER_SEASON} 기준`;
     $('#season2').textContent = window.ROSTER_SEASON;
-    const teamNames = [...new Set(players.map((p) => team(p).name))];
-    $('#teamSel').innerHTML = '<option value="ALL">모든 팀</option>' + teamNames.map((n) => `<option>${esc(n)}</option>`).join('');
+    const fillTeams = () => {
+      const groups = LEAGUES.filter((l) => state.league === 'ALL' || l === state.league).map((l) => {
+        const names = [...new Set(players.filter((p) => p.league === l).map((p) => team(p).name))].sort((a, b) => a.localeCompare(b, 'ko'));
+        return names.length ? `<optgroup label="${l}">${names.map((n) => `<option${n === state.team ? ' selected' : ''}>${esc(n)}</option>`).join('')}</optgroup>` : '';
+      });
+      $('#teamSel').innerHTML = '<option value="ALL">모든 팀</option>' + groups.join('');
+      if (![...$('#teamSel').options].some((o) => o.value === state.team)) state.team = 'ALL';
+      $('#teamSel').value = state.team;
+    };
+    fillTeams();
+    $('#leagueChips').addEventListener('click', (e) => {
+      const b = e.target.closest('button'); if (!b) return;
+      state.league = b.dataset.v;
+      $('#leagueChips').querySelectorAll('button').forEach((x) => x.classList.toggle('on', x === b));
+      fillTeams();
+      applyFilters();
+    });
 
     $('#statusTabs').addEventListener('click', (e) => {
       const b = e.target.closest('button'); if (!b) return;

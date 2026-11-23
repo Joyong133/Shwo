@@ -213,6 +213,14 @@ main { padding: 10px 12px calc(96px + var(--safe-bot)); max-width: 1100px; margi
 .hl { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 6px; }
 .hl li::marker { color: var(--accent); }
 .teams { margin: 0; color: #c9cfdd; }
+.rec-h { margin-top: 18px !important; }
+.rec { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+.rec > div { background: var(--bg2); border-radius: 10px; padding: 8px 2px; text-align: center; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.rec b { font-size: 16px; font-weight: 800; }
+.rec span { font-size: 11px; color: var(--muted); }
+.champs { margin: 10px 0 0; font-size: 13px; color: var(--muted); }
+.champs b { color: var(--text); font-weight: 600; }
+.league-chips button.on { border-color: #7aa2ff; color: #a9c1ff; background: rgba(90, 130, 255, .14); }
 .now { margin-top: 12px; padding: 10px 12px; border-radius: 12px; background: var(--bg2); display: flex; flex-direction: column; gap: 2px; }
 .now span { font-size: 11px; color: var(--muted); }
 .now b { font-size: 14px; }

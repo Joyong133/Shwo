@@ -4,15 +4,15 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
 <meta name="theme-color" content="#0b0d14">
-<title>LCK 선수 카드</title>
+<title>LoL 프로 선수 카드</title>
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
 <header class="top">
   <div class="brand">
-    <div class="logo">LCK</div>
+    <div class="logo">LoL</div>
     <div>
-      <h1>선수 카드 도감</h1>
+      <h1>프로 선수 카드 도감</h1>
       <p class="sub" id="season"></p>
     </div>
     <button class="icon-btn" id="infoBtn" aria-label="능력치 기준">?</button>
@@ -23,9 +23,16 @@
   <nav class="tabs" id="statusTabs">
     <button data-v="all" class="on">전체</button>
     <button data-v="active">현역</button>
-    <button data-v="legend">은퇴 · 전 LCK</button>
+    <button data-v="legend">은퇴 · 레전드</button>
   </nav>
   <div class="filters">
+    <div class="chips league-chips" id="leagueChips">
+      <button data-v="ALL" class="on">모든 리그</button>
+      <button data-v="LCK">LCK</button>
+      <button data-v="LPL">LPL</button>
+      <button data-v="LEC">LEC</button>
+      <button data-v="LCS">LCS</button>
+    </div>
     <div class="chips" id="posChips">
       <button data-v="ALL" class="on">전체</button>
       <button data-v="TOP">탑</button>
@@ -90,6 +97,16 @@
       <li><b>챔프폭</b> 다룰 수 있는 챔피언과 메타 적응력</li>
       <li><b>안정감</b> 기복, 큰 경기 멘탈, 커리어 꾸준함</li>
     </ul>
+    <h3>LPL · LEC · LCS · 추가 선수</h3>
+    <p>직접 평가한 LCK 선수와 레전드 외의 현역 선수는 <b>2026 시즌 경기 기록</b>으로 능력치를 자동 산출했습니다. 같은 포지션 선수들 사이의 백분위를 66~94점으로 바꾼 뒤, 리그 수준 차이를 반영해 LEC −3점, LCS −6점을 보정합니다. 추가한 LCK 베테랑(2016~2025)은 LCK 통산 기록을 같은 그룹 안에서 비교해 72~88점으로 환산했습니다.</p>
+    <ul class="legend-list">
+      <li><b>라인전</b> 분당 CS · 분당 골드 (서폿은 분당 골드 · 분당 어시스트)</li>
+      <li><b>한타</b> 킬 관여율 · 팀 내 딜 비중 (서폿은 킬 관여율 · 분당 어시스트)</li>
+      <li><b>운영</b> 승률 · 분당 시야 점수</li>
+      <li><b>피지컬</b> KDA · 분당 딜량</li>
+      <li><b>챔프폭</b> 사용한 챔피언 수</li>
+      <li><b>안정감</b> 경기당 데스(적을수록) · 출전 경기 수</li>
+    </ul>
     <h3>종합(OVR) 계산</h3>
     <p>포지션마다 중요한 능력치에 가중치를 다르게 주어 평균을 내고, 국제대회 실적 보너스를 더합니다.</p>
     <table class="wtable" id="wtable"></table>
@@ -98,12 +115,13 @@
     <table class="wtable" id="stable"></table>
     <p class="small">팬 메이드 평가로 공식 수치가 아닙니다. 현역 로스터는 <span id="season2"></span> 기준이며 시즌 중·이적 시장에 따라 달라질 수 있습니다.</p>
     <h3>사진 · 소속 정보</h3>
-    <p class="small">선수 사진과 현재 소속은 Leaguepedia(lol.fandom.com)에서 2026년 11월에 가져왔습니다. 사진의 저작권은 라이엇 게임즈·LCK·각 구단 등 원저작자에게 있으며, 이 앱은 개인 감상용입니다.</p>
+    <p class="small">선수 사진, 경기 기록, 현재 소속은 Leaguepedia(lol.fandom.com)에서 2026년 11월에 가져왔습니다. 사진의 저작권은 라이엇 게임즈·LCK·각 구단 등 원저작자에게 있으며, 이 앱은 개인 감상용입니다.</p>
     <button class="primary wide" id="closeInfo">확인</button>
   </div>
 </div>
 
 <script src="data.js"></script>
+<script src="world.js"></script>
 <script src="meta.js"></script>
 <script src="app.js"></script>
 </body>
